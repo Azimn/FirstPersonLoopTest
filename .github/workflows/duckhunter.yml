@@ -1,0 +1,25 @@
+name: DUCKHunter FirstPersonLoopTest
+
+on:
+  push:
+    branches:
+      - duckhunter-eval-20260911
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Baseline tests
+        working-directory: subjective_character_loop_v0_1
+        run: python -m unittest -v test_subjective_loop.py
+      - name: Duckhunter adversarial tests
+        working-directory: subjective_character_loop_v0_1
+        run: python -m unittest -v test_duckhunter_adversarial.py
