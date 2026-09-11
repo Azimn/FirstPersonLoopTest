@@ -1,0 +1,29 @@
+name: v0.4 think-rest initiation tests
+
+on:
+  push:
+    branches: [v0.4-think-rest-initiation]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    defaults:
+      run:
+        working-directory: subjective_character_loop_v0_4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run unit tests
+        run: python -m unittest -v
+      - name: Run deterministic episodic smoke session
+        run: |
+          rm -f smoke.sqlite3
+          printf 'Hello Doctor, what are you working on?\n/idle 4 15\n/opaque standing beside the table\n/quit\n' | \
+            python subjective_loop.py --provider scripted --character pretorius \
+            --max-continuations 6 --db smoke.sqlite3 --debug
