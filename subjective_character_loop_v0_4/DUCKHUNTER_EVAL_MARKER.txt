@@ -1,0 +1,2 @@
+DUCKHunter v0.4 evaluation branch marker.
+Production code is unchanged.
