@@ -13,9 +13,8 @@ class SemanticBackend(RecordingBackend):
         if "hidden thought-initiation judgment" in low:
             return "THINK" if "unresolved question" in user.lower() else "REST"
         if "hidden continuation judgment" in low:
-            if "which assumption is wrong" in user.lower():
-                return "CONTINUE"
-            return "RELEASE"
+            latest = user.split("Most recent private thought:\n", 1)[-1].lower()
+            return "CONTINUE" if "which assumption is wrong" in latest else "RELEASE"
         if "private inner life" in low:
             if "unresolved question" in user.lower():
                 return "I still do not know which assumption is wrong."
@@ -25,6 +24,16 @@ class SemanticBackend(RecordingBackend):
         if "say anything aloud" in low or "physical action" in low or "involuntary" in low:
             return ""
         return ""
+
+
+class NaiveWholePromptSemanticBackend(SemanticBackend):
+    """Models a weak scheduler that reacts to unresolved cues anywhere in probe context."""
+
+    def complete(self, system, user, temperature=0.8, max_tokens=160):
+        if "hidden continuation judgment" in system.lower():
+            self.calls.append((system, user, temperature, max_tokens))
+            return "CONTINUE" if "which assumption is wrong" in user.lower() else "RELEASE"
+        return super().complete(system, user, temperature, max_tokens)
 
 
 class AlwaysRestBackend(RecordingBackend):
@@ -57,6 +66,7 @@ class DuckhunterV04(LoopTestCase):
         thoughts = active_loop.cognitive_cycle("event")
         self.assertEqual(len(thoughts), 2)
         self.assertIn("which assumption is wrong", thoughts[0])
+        self.assertIn("then stop", thoughts[1])
 
     def test_repeated_rest_reuses_identical_prompt_until_subjective_awareness_changes(self):
         backend = AlwaysRestBackend()
@@ -111,6 +121,15 @@ class DuckhunterV04(LoopTestCase):
         for index in range(30):
             loop.hear("Jay", f"Unrelated small talk {index}.", think=False)
         self.assertNotIn("brass key", loop._awareness_prompt().lower())
+
+    @unittest.expectedFailure
+    def test_settled_latest_thought_can_release_despite_stale_unresolved_context(self):
+        """A weak content matcher can be trapped by unresolved wording retained in earlier context."""
+        backend = NaiveWholePromptSemanticBackend()
+        loop, _ = self.make_loop(backend, max_continuations=4)
+        loop.hear("Jay", "There is an unresolved question in the experiment.", think=False)
+        thoughts = loop.cognitive_cycle("event")
+        self.assertEqual(len(thoughts), 2)
 
     @unittest.expectedFailure
     def test_rest_does_not_preclude_routine_deliberate_response(self):
