@@ -11,7 +11,7 @@ class BoundaryTests(LoopTestCase):
         backend = RecordingBackend()
         loop, _ = self.make_loop(backend)
         loop.hear("Jay", "Good morning.", think=False)
-        self.assertIn('I hear Jay say, "Good morning."', self.journal_text(loop))
+        self.assertIn('I hear Jay say:\n> Good morning.', self.journal_text(loop))
         self.assertNotIn("Jay said:", "\n".join(user for _, user, _, _ in backend.calls))
 
     def test_external_attributed_speech_may_quote_implementation_like_words(self):
