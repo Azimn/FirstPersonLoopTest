@@ -75,11 +75,11 @@ class DuckhunterV02(unittest.TestCase):
 
     def test_restart_does_not_repeat_existing_threshold_awareness(self):
         loop, db = self.make_loop()
-        loop.set_hidden("hunger", 90)
-        before = len([r for r in loop.journal.dump(100) if r[1] == "experience" and "starving" in r[2].lower()])
+        loop.set_hidden("hunger", 50)
+        before = len([r for r in loop.journal.dump(100) if r[1] == "experience" and "definitely hungry" in r[2].lower()])
         reopened = CharacterLoop(PRETORIUS_IDENTITY, RecordingBackend(), db, seed=1, min_thoughts=2, max_thoughts=2)
         reopened.step(0, think=False)
-        after = len([r for r in reopened.journal.dump(100) if r[1] == "experience" and "starving" in r[2].lower()])
+        after = len([r for r in reopened.journal.dump(100) if r[1] == "experience" and "definitely hungry" in r[2].lower()])
         self.assertEqual(before, after)
 
     def test_heard_mechanistic_words_remain_attributed_to_speaker(self):
