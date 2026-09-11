@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Subjective Character Loop v0.4 command-line entry point."""
+"""Subjective Character Loop v0.4.1 command-line entry point."""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +8,7 @@ from typing import Optional
 
 from backends import ModelBackend, OllamaBackend, ScriptedBackend
 from experience import HiddenState
-from loopcore import CharacterLoop, INITIATION_SYSTEM, PROBE_SYSTEM, SubjectiveIngressGate
+from hardening import CharacterLoop, INITIATION_SYSTEM, PROBE_SYSTEM, SubjectiveIngressGate
 from personas import KIKI_IDENTITY, PRETORIUS_IDENTITY, select_identity
 
 
@@ -36,9 +36,10 @@ Any other text is speech the character hears.
 
 
 def interactive(loop: CharacterLoop, interlocutor: str) -> None:
-    print("Subjective Character Loop v0.4")
+    print("Subjective Character Loop v0.4.1")
     print("Character-accessible state is first-person natural language only.")
-    print("THINK/REST selects whether explicit thought begins; CONTINUE/RELEASE selects whether it persists.")
+    print("THINK/REST gates explicit private thought only; behavior remains separately available.")
+    print("CONTINUE/RELEASE controls the duration of a thought episode once it begins.")
     print_help()
     print()
     while True:
@@ -100,7 +101,7 @@ def interactive(loop: CharacterLoop, interlocutor: str) -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Minimal first-person subjective character loop v0.4")
+    parser = argparse.ArgumentParser(description="Minimal first-person subjective character loop v0.4.1")
     parser.add_argument("--character", choices=["pretorius", "kiki"], default="pretorius")
     parser.add_argument("--provider", choices=["ollama", "scripted"], default="ollama")
     parser.add_argument("--model", default="qwen3:8b", help="Ollama model name")
@@ -116,7 +117,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args(argv)
 
-    db_path = Path(args.db) if args.db else Path(f"{args.character}_subjective_loop_v04.sqlite3")
+    db_path = Path(args.db) if args.db else Path(f"{args.character}_subjective_loop_v041.sqlite3")
     backend: ModelBackend = ScriptedBackend() if args.provider == "scripted" else OllamaBackend(args.model, args.host)
     loop = CharacterLoop(
         select_identity(args.character), backend, db_path,
