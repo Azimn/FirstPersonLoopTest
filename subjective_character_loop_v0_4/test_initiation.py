@@ -3,14 +3,26 @@ from test_support import LoopTestCase, RecordingBackend
 
 
 class InitiationTests(LoopTestCase):
-    def test_rest_produces_no_private_thought_or_deliberate_behavior(self):
-        backend = RecordingBackend(initiation=["REST"], private=["This must never be called."], speech=["Nor this."])
+    def test_rest_produces_no_private_thought_but_can_still_speak(self):
+        backend = RecordingBackend(
+            initiation=["REST"],
+            private=["This must never be called."],
+            speech=["Good morning."],
+        )
+        loop, _ = self.make_loop(backend)
+        self.assertEqual(loop.cognitive_cycle("conversation"), [])
+        kinds = [kind for _, kind, _ in loop.journal.dump()]
+        self.assertNotIn("thought", kinds)
+        self.assertIn("spoken", kinds)
+        called_systems = "\n".join(system for system, _, _, _ in backend.calls)
+        self.assertNotIn("private inner life", called_systems.lower())
+        self.assertIn("say anything aloud", called_systems.lower())
+
+    def test_rest_can_also_remain_behaviorally_silent(self):
+        backend = RecordingBackend(initiation=["REST"], speech=[""])
         loop, _ = self.make_loop(backend)
         self.assertEqual(loop.cognitive_cycle("idle"), [])
         self.assertFalse(any(kind in {"thought", "spoken", "action"} for _, kind, _ in loop.journal.dump()))
-        called_systems = "\n".join(system for system, _, _, _ in backend.calls)
-        self.assertNotIn("private inner life", called_systems.lower())
-        self.assertNotIn("say anything aloud", called_systems.lower())
 
     def test_think_starts_private_cognition(self):
         backend = RecordingBackend(initiation=["THINK"], private=["Something about that sound bothers me."], probes=["RELEASE"])
