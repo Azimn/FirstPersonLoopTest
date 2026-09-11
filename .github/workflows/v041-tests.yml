@@ -1,0 +1,29 @@
+name: v0.4.1 behavior-ingress hardening tests
+
+on:
+  push:
+    branches: [v0.4.1-behavior-ingress-hardening]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    defaults:
+      run:
+        working-directory: subjective_character_loop_v0_4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run full unit and adversarial suite
+        run: python -m unittest -v
+      - name: Run REST-with-behavior smoke session
+        run: |
+          rm -f smoke.sqlite3
+          printf 'Good morning.\n/idle 3 15\n/quit\n' | \
+            python subjective_loop.py --provider scripted --character pretorius \
+            --max-continuations 6 --db smoke.sqlite3 --debug
