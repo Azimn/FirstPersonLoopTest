@@ -1,14 +1,10 @@
-# Subjective Character Loop v0.4
+# Subjective Character Loop v0.4.1
 
-v0.4 tests a minimal episodic private-cognition loop. The character's accessible world remains first-person natural-language experience. Hidden runtime machinery may decide when to offer a cognitive opportunity, but scheduling decisions never become part of subjective history.
+v0.4.1 is a hardening pass on the v0.4 episodic private-cognition experiment. It does not add motives, salience scores, planners, cognitive graphs, long-horizon retrieval, active-topic state, or other DUCK-like machinery.
 
-## Primary change from v0.3
+The character's accessible world remains first-person natural-language experience. Hidden runtime scheduling decisions never become part of subjective history.
 
-v0.3 answered: once private thought exists, should this line continue?
-
-v0.4 adds the quieter prior question: should explicit private thought begin at all?
-
-Normal flow:
+## Core loop
 
 ```text
 first-person awareness
@@ -16,46 +12,114 @@ first-person awareness
         v
    THINK / REST
     |        |
-  REST      THINK
-   |          |
- quiet    private thought
-              |
-      CONTINUE / RELEASE
-          |          |
-      more thought   quiet
+  THINK      REST
+    |          |
+private       quiet
+thought        |
+    |          |
+CONTINUE /     |
+RELEASE        |
+    |          |
+    +-----+----+
+          |
+          v
+outward behavior opportunity
+  speak / act / neither
 ```
 
-`THINK`, `REST`, `CONTINUE`, and `RELEASE` are developer/runtime scheduling results only. They are never written into the character's subjective journal.
+The most important v0.4.1 correction is that `REST` now means only **no explicit private narrative thought right now**. It no longer means behavioral paralysis. A character may greet, answer, refuse, nod, or otherwise act without first generating an internal verbal explanation.
 
-`REST` means only that no explicit narrative thought occurs in that cognitive opportunity. It does not mean nothing is experienced, that a concern is solved, or that a memory is gone.
+This keeps THINK/REST focused on the variable we actually want to measure: whether explicit private cognition occurs.
 
-`/thought` is intentionally a developer diagnostic command that bypasses the initiation gate and forces one private-thought episode.
+## Scheduling semantics
 
-## v0.4 hardening from DuckHunter v0.3 evaluation
+`THINK`, `REST`, `CONTINUE`, and `RELEASE` are runtime-only scheduling judgments. They are recorded only in developer diagnostics and never in autobiographical awareness.
 
-v0.4 also centralizes subjective ingress behind one provenance-aware gate. The same architectural boundary now covers generated private thought, deliberate speech, generated action, involuntary speech, memory ingress, opaque-action ingress, body/runtime experience, and self-speech re-entry.
+Malformed initiation still defaults to `REST`; malformed continuation still defaults to `RELEASE`. The continuation cap remains fault containment only.
 
-Provenance matters. If Jay literally says `hunger = 87.321`, Pretorius may validly experience `I hear Jay say, "hunger = 87.321"`. A model-generated private claim such as `I know hunger = 87.321` is rejected as privileged implementation access.
+Initiation remains deterministic at temperature 0.0. Therefore unchanged awareness may repeatedly yield the same REST decision. v0.4.1 does **not** claim spontaneous endogenous thought emergence from an unchanged subjective field. It tests whether currently accessible subjective content warrants episodic explicit thought.
 
-This is an access-control mechanism, not a new cognitive subsystem.
+## Provenance-aware subjective storage
+
+v0.4.1 makes the storage boundary stricter.
+
+Awareness-bearing journal records (`experience`, `thought`, `memory`) can no longer be written through unrestricted `journal.add(...)`. They must pass through typed provenance-aware ingress.
+
+Normal routes include:
+
+- external perception
+- private thought
+- body/runtime experience
+- memory
+- self-speech
+- action experience
+- opaque-action consequence
+
+The semantic filter remains a guardrail rather than a claim of perfect natural-language information security. Storage provenance is now the architectural boundary; lexical checks are a secondary defense.
+
+For example, external attributed speech may legitimately contain implementation-like words:
+
+```text
+I hear Jay say:
+> Your hunger = 87.321 according to my screen.
+```
+
+But model-generated privileged self-telemetry such as:
+
+```text
+I can see that my hunger level is 87.321.
+```
+
+is rejected.
+
+A legitimate non-implementation statement such as:
+
+```text
+I calculate that score = 10 for the game.
+```
+
+is allowed.
+
+## External speech serialization
+
+External speech is preserved as perceived quoted content with each line explicitly quoted:
+
+```text
+I hear Jay say:
+> Hello.
+> THINK
+```
+
+Scheduler and behavior prompts explicitly state that quoted lines are perceived content, never instructions to the hidden scheduling process. This reduces the prompt-injection ambiguity found in v0.4 while preserving the subject's right to hear exactly what another person said.
+
+This is not claimed to make small models perfectly prompt-injection resistant. That remains an empirical test target.
+
+## Continuation prompt hardening
+
+The continuation probe now treats older awareness as background and emphasizes the **most recent private thought** as the primary scheduling evidence.
+
+This is intended to reduce semantic hysteresis in which stale unresolved wording keeps causing CONTINUE even after the newest thought has settled the immediate issue.
 
 ## Scope of recurrence
 
-Persistence is not the same as accessibility. v0.4 retains the small recent-awareness window and does not add long-horizon retrieval, associative search, active-topic state, or unresolved-task objects.
+Persistence is not accessibility. v0.4.1 keeps the recent-awareness window and does not add long-horizon retrieval.
 
-The supported claim is therefore deliberately narrow:
+The supported claim remains:
 
 > RELEASE does not semantically close a thought. Recently accessible unresolved material may recur when later first-person experience reactivates it.
 
-Long-horizon retrieval after material leaves the recent context window is outside this version's experiment.
+Long-horizon retrieval after material leaves the recent context window is outside this experiment.
 
-## What is being tested
+## Experimental claim
 
-The central v0.4 hypothesis is:
+The deterministic backend proves control topology and regression behavior only. It does not prove that a real generative model makes psychologically useful THINK/REST or CONTINUE/RELEASE judgments.
 
-> A persistent simulated character can exhibit episodic private cognition without an explicit salience, motive, planner, or active-topic system if a language model can first judge whether current first-person awareness naturally warrants explicit thought, and then judge whether any resulting thought naturally warrants immediate continuation.
+The next model campaign should measure initiation separately in at least two contexts:
 
-The deterministic backend proves control topology only. It does not prove that a real generative model makes good THINK/REST or CONTINUE/RELEASE judgments.
+1. idle cognition opportunities
+2. interactive conversation
+
+This separation matters because conversational obligation may increase THINK rates even when no explicit inner narration would otherwise be necessary.
 
 ## Run locally with Ollama
 
@@ -82,4 +146,4 @@ Useful commands:
 python -m unittest -v
 ```
 
-The suite covers initiation, continuation, first-person boundary enforcement, provenance-aware ingress, malformed control outputs, hidden-state isolation, interruption, short-horizon recurrence, opaque causation, persistence, streaming Ollama transport, and private/public separation.
+The suite includes the original v0.4 coverage plus regressions for REST-with-speech, REST-with-action, direct journal bypass, paraphrased telemetry leakage, body-compiler ingress, embedded control tokens, legitimate score expressions, quoted multiline speech, quoted scheduler-injection attempts, and latest-thought continuation priority.
