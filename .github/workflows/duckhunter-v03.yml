@@ -1,0 +1,25 @@
+name: DUCKHunter v0.3 adversarial tests
+
+on:
+  push:
+    branches:
+      - duckhunter-v03-eval-20260911
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run v0.3 baseline tests
+        working-directory: subjective_character_loop_v0_3
+        run: python -m unittest -v test_boundaries.py test_continuation.py
+      - name: Run DUCKHunter v0.3 adversarial tests
+        working-directory: subjective_character_loop_v0_3
+        run: python -m unittest -v test_duckhunter_v03.py
