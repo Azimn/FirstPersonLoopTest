@@ -1,0 +1,9 @@
+{
+  "name": "FirstPersonLoop Mobile Test",
+  "short_name": "FirstPersonLoop",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0e12",
+  "theme_color": "#111217",
+  "description": "Local iPhone research interface for Subjective Character Loop v0.4.4"
+}
