@@ -318,7 +318,7 @@ BetweenThoughtsHook = Callable[["CharacterLoop", int], None]
 
 
 class CharacterLoop:
-    """Canonical v0.4.3 loop: episodic thought with temporally framed behavior."""
+    """Canonical v0.4.4 loop: visible private content and copy protection are aligned."""
 
     _speech_narration = re.compile(
         r"^\s*(?:(?:dr\.\s+)?pretorius|kiki|the character|he|she)\s+"
@@ -679,8 +679,26 @@ class CharacterLoop:
             temperature=0.72,
             max_tokens=self.speech_tokens,
         ).strip()
-        latest_thought = thought_episode[-1] if thought_episode else ""
-        spoken = self._validate_spoken(spoken, latest_thought)
+        # Privacy invariant: every private thought visible to the speech renderer
+        # must be inside the copy-protection domain. The renderer sees the full
+        # current episode plus up to six background awareness entries.
+        background_rows = self.journal.conn.execute(
+            "SELECT kind, text FROM episodes "
+            "WHERE id <= ? AND kind IN ('experience', 'thought', 'memory') "
+            "ORDER BY id DESC LIMIT 6",
+            (opportunity_start,),
+        ).fetchall()
+        visible_private = [
+            thought.strip() for thought in thought_episode if thought.strip()
+        ]
+        visible_private.extend(
+            text for kind, text in background_rows if kind == "thought"
+        )
+        spoken = self._validate_spoken(
+            spoken,
+            private_thought="",
+            private_candidates=visible_private,
+        )
         if spoken:
             self._record_spoken(spoken, involuntary=False)
         else:
@@ -724,6 +742,7 @@ class CharacterLoop:
         spoken: str,
         private_thought: str,
         involuntary: bool = False,
+        private_candidates: Optional[list[str]] = None,
     ) -> str:
         value = spoken.strip()
         if not value:
@@ -748,7 +767,12 @@ class CharacterLoop:
             candidates: list[str] = []
             if private_thought.strip():
                 candidates.append(private_thought.strip())
-            candidates.extend(self.journal.recent_accessible_thoughts())
+            if private_candidates is None:
+                # Compatibility path for direct validator callers. Normal deliberate
+                # speech supplies the exact private set visible in its prompt.
+                candidates.extend(self.journal.recent_accessible_thoughts())
+            else:
+                candidates.extend(private_candidates)
 
             seen: set[str] = set()
             for thought in candidates:
@@ -788,7 +812,7 @@ class CharacterLoop:
 
     @staticmethod
     def _action_as_experience(action: str) -> str:
-        """Compatibility helper; v0.4.3 actions must already be first-person."""
+        """Compatibility helper; v0.4.4 actions must already be first-person."""
         return action.strip()
 
     def _record_spoken(self, spoken: str, involuntary: bool) -> None:
