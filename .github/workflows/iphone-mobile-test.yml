@@ -1,0 +1,73 @@
+name: iPhone mobile harness tests
+
+on:
+  push:
+    branches: [v0.4.4-iphone-mobile-test]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    defaults:
+      run:
+        working-directory: subjective_character_loop_v0_4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run frozen architecture and mobile tests
+        run: python -m unittest -v
+      - name: Compile mobile server
+        run: python -m py_compile mobile_server.py
+      - name: Exercise Safari-facing HTTP API with ScriptedBackend
+        shell: bash
+        run: |
+          rm -f /tmp/iphone-mobile.sqlite3
+          python mobile_server.py --provider scripted --character pretorius \
+            --bind 127.0.0.1 --port 8765 --db /tmp/iphone-mobile.sqlite3 \
+            >/tmp/mobile-server.log 2>&1 &
+          SERVER_PID=$!
+          cleanup() { kill "$SERVER_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          base = 'http://127.0.0.1:8765'
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen(base + '/api/status', timeout=1) as response:
+                      status = json.load(response)
+                  break
+              except Exception:
+                  time.sleep(0.2)
+          else:
+              raise SystemExit('mobile server did not start')
+
+          assert status['ok'] is True
+          assert status['character'] == 'pretorius'
+
+          payload = json.dumps({'text': 'Good morning, Doctor.'}).encode('utf-8')
+          request = urllib.request.Request(
+              base + '/api/message',
+              data=payload,
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          with urllib.request.urlopen(request, timeout=10) as response:
+              result = json.load(response)
+          assert result['ok'] is True
+          assert result['events']
+          assert any(event['kind'] == 'experience' for event in result['events'])
+
+          with urllib.request.urlopen(base + '/', timeout=2) as response:
+              html = response.read().decode('utf-8')
+          assert 'FirstPersonLoop' in html
+          assert 'Private thought' in html
+          print('mobile HTTP smoke test passed')
+          PY
