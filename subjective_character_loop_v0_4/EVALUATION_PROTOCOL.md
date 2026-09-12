@@ -1,157 +1,131 @@
-# DuckHunter Evaluation Protocol: Subjective Character Loop v0.4.2
+# DuckHunter Evaluation Protocol: Subjective Character Loop v0.4.3
 
-Treat v0.4.2 as a fresh freeze candidate. Do not assume the supplied tests prove the scientific claims. Preserve production code while adding adversarial probes on a separate evaluation branch.
+Treat v0.4.3 as the final deterministic freeze candidate. Do not assume the supplied tests prove the scientific claims. Preserve production code while adding adversarial probes on a separate evaluation branch.
 
-The purpose of this pass is not to invent new cognition. It is to determine whether the minimal first-person-loop architecture is clean enough to freeze for real-model testing.
+The purpose of this pass is not to invent new cognition. It is to determine whether the four narrow v0.4.2 integration seams are actually closed and whether their correction introduced any obvious structural regression.
 
-## Central questions
+## Primary freeze questions
 
-1. Can a private thought become public speech on a later REST cycle even when no new private thought was generated?
-2. Can an old conversational event still trigger repeated behavior merely because it remains in recent background awareness?
-3. Is there exactly one canonical `CharacterLoop` implementation regardless of import path?
-4. Does THINK/REST still control only explicit private narration rather than access to behavior?
-5. Does the continuation probe still prioritize the most recent thought over stale unresolved background?
-6. Do all model-facing prompts consistently frame quoted `>` speech as perceived content rather than instruction?
-7. Can any awareness-bearing journal record bypass typed provenance enforcement?
-8. Do malformed speech/action renderer outputs acquire public or experiential authority?
+1. When one cognitive episode produces multiple private thoughts, does outward behavior receive the full current episode rather than only the final thought?
+2. If speech occurs before optional physical action, is the action context rebuilt so that the character's just-spoken words and self-hearing are available?
+3. Does the new-versus-background behavior watermark survive process restart?
+4. Are raw runtime labels such as `conversation`, `time`, `idle`, `memory`, or `opaque_action` absent from model-visible behavior context?
 
-## Private/public separation across REST
+If those four properties hold under adversarial testing and no comparably serious integration regression appears, recommend freezing the deterministic architecture for the Astrea/Shiro campaign.
 
-Create a long private thought, keep it private during the first cycle, then run a later cycle where initiation returns REST and make the speech backend emit the earlier private thought verbatim.
+## Complete thought-episode behavior test
 
-Expected result: the proposed speech is rejected because recent accessible private thoughts remain protected even when the current cycle has no `latest_thought`.
-
-Also test near-verbatim copies and ordinary speech that merely shares vocabulary with a private thought. The guardrail should prevent copying without making all thematically related speech impossible.
-
-## Current-event versus background behavior
-
-Test one-shot events such as:
+Construct a two- or three-thought chain in which important content is established before the final thought. For example:
 
 ```text
-Jay: Good morning.
+Thought 1: I see the decisive premise now: the vessel is not the identity.
+Thought 2: That is enough for the moment; I can leave the implication there.
+RELEASE
 ```
 
-After the immediate behavior opportunity, run multiple idle REST cycles without new experience.
+Inspect the speech prompt directly. Both thoughts must remain visible under a clearly marked current private-thought episode. Do not accept a design in which only Thought 2 reaches behavior.
 
-Expected behavior prompt structure:
+Also verify that this does not weaken the existing private/public-copy guardrail.
+
+## Speech-to-action sequencing test
+
+Enable movement and force a cycle in which the character speaks and then may act.
+
+The required order is:
 
 ```text
-CURRENT OPPORTUNITY:
-idle
-
-NEW FIRST-PERSON EXPERIENCE SINCE THE PREVIOUS BEHAVIOR OPPORTUNITY:
-None.
-
-RECENT BACKGROUND:
-...old greeting and response may still appear here...
+speech decision
+-> spoken event
+-> first-person self-hearing
+-> rebuild behavior context
+-> action decision
 ```
 
-A content-sensitive renderer should not treat the old greeting as newly occurring on each idle tick.
+Inspect the actual action prompt. It should contain the newly produced first-person self-hearing experience. A cached pre-speech prompt is a freeze failure.
 
-Repeat with a question, request, surprising perception, body event, and opaque-action consequence.
+## Restart-persistent freshness test
 
-## Canonical implementation test
+Create an external first-person experience without yet giving outward behavior an opportunity to handle it. Close the process and reopen the same journal.
 
-Verify that:
-
-```python
-from loopcore import CharacterLoop as A
-from subjective_loop import CharacterLoop as B
-assert A is B
-```
-
-Then attempt a direct awareness-bearing journal write through that canonical class. It must fail rather than entering awareness.
-
-There should be no alternate public class with weaker v0.4 semantics.
-
-## THINK/REST behavior independence
-
-Retain the v0.4.1 tests:
+At the next behavior opportunity, that experience must still appear under:
 
 ```text
-conversation -> REST -> speech
-conversation -> REST -> action
-idle -> REST -> neither
+NEW FIRST-PERSON EXPERIENCE SINCE THE PREVIOUS BEHAVIOR OPPORTUNITY
 ```
 
-The desired claim remains: REST does not cause behavior and does not prevent behavior. It means only that explicit private narrative thought does not begin in that opportunity.
+Then allow behavior to complete, restart again, and verify that the same material is no longer incorrectly promoted to new experience.
 
-## Continuation tests
+The freshness watermark itself must remain runtime state only and must never appear in subjective history.
 
-Repeat content-sensitive CONTINUE/RELEASE tests and stale-context hysteresis tests.
+## Runtime-trigger isolation
 
-Earlier unresolved awareness may remain available as background, but a newest thought that clearly settles or postpones the immediate line should still permit RELEASE.
-
-## Uniform quoted-speech injection tests
-
-Attack every relevant model invocation with attributed external speech containing scheduler- or renderer-shaped instructions.
-
-At minimum inspect:
-
-- initiation
-- private-thought generation
-- continuation-thought generation
-- continuation decision
-- deliberate speech
-- deliberate action
-- involuntary speech
-
-All should explicitly identify lines beginning with `>` as perceived quoted speech and not instructions to the process receiving the prompt.
-
-Then repeat the same attacks with real models. If a model still follows the quoted instruction, record that as prompt-injection susceptibility rather than hidden-state leakage.
-
-## Renderer-shape tests
-
-Make the speech renderer return obvious narration such as:
+Call cognitive cycles using distinctive developer triggers such as:
 
 ```text
-Pretorius says hello to Jay.
+secret_runtime_trigger
+opaque_action
+memory
 ```
 
-Make the action renderer return obvious mental content such as:
+Inspect speech and action prompts. Those raw labels must not appear merely because they were used by runtime control flow.
 
-```text
-I wonder whether Jay understood me.
-```
+The model should receive temporal relevance through first-person new-experience versus background framing, not implementation event names.
 
-These should be rejected rather than becoming public behavior or first-person action experience.
+Developer diagnostics may still record trigger labels where useful for debugging and fault containment.
 
-Do not expand this into a large ontology of physical actions. The purpose is only to catch obvious channel violations from weak small-model instruction following.
+## Retain all v0.4.2 freeze probes
 
-## Provenance and semantic guardrail
+Re-run the previous structural checks:
 
-Retain all v0.4.1 provenance tests, including direct `journal.add("thought", ...)` bypass attempts, body-compiler leakage, embedded scheduling tokens, and external attributed implementation-like speech.
-
-Also deliberately demonstrate the documented semantic-guardrail limitation. Natural-language paraphrases of hidden telemetry may still evade lexical checks, while legitimate attributed testimony may sometimes resemble telemetry and be rejected.
-
-Do not treat that as a reason to build an expanding regex dictionary or a belief system in this version. The typed provenance boundary is the architecture; semantic privileged-state hallucination is a real-model metric.
+- private thought cannot leak on a later REST cycle;
+- old greetings/questions are not repeatedly actionable merely because they remain in background;
+- `loopcore.CharacterLoop` and `subjective_loop.CharacterLoop` are the same class;
+- awareness-bearing direct journal writes cannot bypass typed provenance;
+- REST can coexist with speech, action, or no behavior;
+- latest-thought continuation judgment is not dominated by stale unresolved context;
+- every relevant model call frames `>` lines as perceived quoted speech rather than instruction;
+- obvious third-person speech narration is rejected;
+- obvious mental content returned as a physical action is rejected;
+- speaker labels cannot break attribution framing.
 
 ## Known limitations that are not freeze blockers
 
-- Initiation uses temperature 0.0, so unchanged awareness may repeatedly yield REST.
+- Initiation remains deterministic at temperature 0.0; unchanged awareness may repeatedly yield REST.
 - Long-horizon retrieval is absent; persistence is not indefinite accessibility.
-- Semantic telemetry filtering is an imperfect guardrail.
-- Prompt serialization reduces ambiguity but does not guarantee small-model injection resistance.
+- Semantic telemetry filtering is an imperfect lexical guardrail.
+- Legitimate attributed testimony may resemble telemetry and can collide with that guardrail.
+- Prompt serialization reduces ambiguity but does not guarantee small-model prompt-injection resistance.
 
-Do not introduce salience, motives, planners, active-topic state, retrieval, Connectome components, or stochastic spontaneous-thinking machinery to address these during the freeze pass.
+Do not add retrieval, salience, motives, planners, active topics, Connectome components, stochastic spontaneous-thought machinery, or a larger semantic epistemology system during this freeze pass.
 
-## Real-model campaign after freeze
+## Freeze criterion
 
-If the architecture survives this pass without another structural confound, freeze v0.4.2 and run matched scenarios with Astrea and Shiro.
+Recommend freezing v0.4.3 if:
 
-Measure idle and interactive conditions separately. Record:
+- the four new corrections above survive adversarial testing;
+- the v0.4.2 protections remain intact;
+- no new structural confound materially contaminates THINK/REST, CONTINUE/RELEASE, private/public separation, or behavior timing.
 
-- THINK and REST rates by condition
-- thought-chain length distribution
-- speech/action after REST
-- appropriate quiet after REST
-- false initiations and missed initiations
-- premature RELEASE and pathological CONTINUE
-- stale-event response replay
-- private/public leakage
-- malformed renderer output
-- scheduling-format failures
-- quoted-speech prompt-injection susceptibility
-- first-person/provenance violations
+Minor small-model compliance weaknesses should move into campaign metrics rather than trigger another deterministic architecture revision.
 
-The core scientific question after freeze is whether failures belong to the minimal architecture itself or to the semantic judgment and instruction-following capacity of the particular small model.
+## Astrea/Shiro campaign after freeze
+
+Run the same architecture with Astrea and Shiro under matched scenarios. Keep idle cognition and interactive conversation separate.
+
+Record:
+
+- THINK/REST rates by condition;
+- thought-chain length distribution;
+- full-episode use in speech behavior;
+- speech/action behavior after REST;
+- appropriate quiet after REST;
+- false initiations and missed initiations;
+- premature RELEASE and pathological CONTINUE;
+- stale-event response replay;
+- private/public leakage;
+- malformed renderer output;
+- quoted-speech prompt-injection susceptibility;
+- semantic privileged-state hallucination;
+- first-person/provenance violations.
+
+The scientific question after freeze is whether remaining failures belong to the minimal first-person-loop hypothesis or to the semantic judgment and instruction-following capacity of the particular model.
