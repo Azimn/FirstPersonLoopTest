@@ -18,7 +18,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Run v0.4.1 baseline suite
         working-directory: subjective_character_loop_v0_4
-        run: python -m unittest -v
+        run: python -m unittest -v test_boundaries.py test_continuation.py test_initiation.py test_v041_hardening.py
       - name: Run fresh Duckhunter v0.4.1 probes
         working-directory: subjective_character_loop_v0_4
         run: python -m unittest -v test_duckhunter_v041_fresh.py
