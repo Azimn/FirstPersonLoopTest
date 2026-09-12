@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111217">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FirstPersonLoop">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <title>FirstPersonLoop Mobile Test</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d0e12;
+      --panel: #15171e;
+      --panel2: #1b1e27;
+      --line: #2a2e3a;
+      --text: #f2f3f6;
+      --muted: #9aa1b2;
+      --thought: #bcb2ff;
+      --speech: #b9e6ca;
+      --experience: #aeb8c8;
+      --accent: #d4c3ff;
+      --danger: #ffb3b3;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; }
+    body { min-height: 100dvh; }
+    button, input, select { font: inherit; }
+    button { touch-action: manipulation; }
+    .app { min-height: 100dvh; display: grid; grid-template-rows: auto auto 1fr auto; padding-top: env(safe-area-inset-top); }
+    header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); background: rgba(13,14,18,.94); backdrop-filter: blur(16px); position: sticky; top: 0; z-index: 10; }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
+    .status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; min-width: 0; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #6f7480; flex: none; }
+    .dot.ok { background: #73d39a; box-shadow: 0 0 10px rgba(115,211,154,.4); }
+    .model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45vw; }
+    .controls { padding: 9px 12px; display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--panel); scrollbar-width: none; }
+    .controls::-webkit-scrollbar { display: none; }
+    .chip { border: 1px solid var(--line); background: var(--panel2); color: var(--text); border-radius: 999px; padding: 8px 12px; white-space: nowrap; font-size: 13px; }
+    .chip:active { transform: scale(.98); }
+    .chip.primary { border-color: #665d8f; background: #29243c; }
+    main { overflow-y: auto; padding: 14px 12px 120px; scroll-behavior: smooth; }
+    .empty { color: var(--muted); text-align: center; padding: 48px 24px; line-height: 1.5; }
+    .entry { margin: 0 0 10px; border: 1px solid var(--line); background: var(--panel); border-radius: 15px; padding: 11px 12px; }
+    .entry .label { font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .entry .text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.42; font-size: 15px; }
+    .entry.thought { border-color: #4b4569; background: #181623; }
+    .entry.thought .label { color: var(--thought); }
+    .entry.spoken { border-color: #355846; background: #131d18; margin-left: 28px; }
+    .entry.spoken .label { color: var(--speech); }
+    .entry.experience { background: #12141a; }
+    .entry.experience .text { color: var(--experience); font-size: 14px; }
+    .entry.action { border-color: #5b5140; background: #1b1812; }
+    .entry.memory { border-style: dashed; }
+    .entry.user { margin-left: 48px; background: #202431; }
+    .entry.user .label { color: var(--accent); }
+    .busy { display: none; padding: 10px 12px; color: var(--muted); font-size: 13px; align-items: center; gap: 8px; }
+    .busy.show { display: flex; }
+    .spinner { width: 13px; height: 13px; border: 2px solid #454958; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .composer { position: fixed; left: 0; right: 0; bottom: 0; padding: 9px 10px calc(9px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(13,14,18,.95); backdrop-filter: blur(18px); }
+    .compose-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; max-width: 900px; margin: auto; }
+    .composer input { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--panel2); color: var(--text); padding: 13px 14px; outline: none; font-size: 16px; }
+    .composer input:focus { border-color: #6a628d; }
+    .send { border: 0; border-radius: 14px; padding: 0 17px; background: #ded3ff; color: #18131f; font-weight: 750; }
+    .send:disabled, .chip:disabled { opacity: .45; }
+    details { margin: 2px 12px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    summary { padding: 10px 12px; color: var(--muted); font-size: 13px; cursor: pointer; }
+    .dev { padding: 0 12px 12px; display: grid; gap: 10px; }
+    .dev-row { display: grid; grid-template-columns: 1fr 92px auto; gap: 8px; align-items: center; }
+    .dev input, .dev select { width: 100%; border: 1px solid var(--line); border-radius: 9px; background: var(--panel2); color: var(--text); padding: 8px; }
+    .dev button { border: 1px solid var(--line); border-radius: 9px; background: var(--panel2); color: var(--text); padding: 8px 10px; }
+    .toggle-row { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+    .error { color: var(--danger); padding: 10px 12px; font-size: 13px; display: none; }
+    .error.show { display: block; }
+    @media (min-width: 760px) {
+      main { width: min(760px, 100%); margin: 0 auto; }
+      .controls { justify-content: center; }
+      header > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="topline">
+      <h1>FirstPersonLoop</h1>
+      <div class="status"><span id="dot" class="dot"></span><span id="model" class="model">Connecting...</span></div>
+    </div>
+  </header>
+
+  <div>
+    <div class="controls">
+      <button class="chip primary" data-action="idle" data-seconds="30">Idle 30s</button>
+      <button class="chip" data-action="idle" data-seconds="300">Idle 5m</button>
+      <button class="chip" data-action="thought">Force thought</button>
+      <button class="chip" data-action="hunger">Hunger 90</button>
+    </div>
+    <details>
+      <summary>Research controls</summary>
+      <div class="dev">
+        <div class="toggle-row">
+          <label><input id="showThoughts" type="checkbox" checked> private thoughts</label>
+          <label><input id="showExperience" type="checkbox" checked> experiences</label>
+        </div>
+        <div class="dev-row">
+          <select id="bodyChannel">
+            <option value="hunger">hunger</option>
+            <option value="fatigue">fatigue</option>
+            <option value="pain">pain</option>
+            <option value="temperature_discomfort">temperature</option>
+            <option value="boredom">boredom</option>
+          </select>
+          <input id="bodyValue" type="number" min="0" max="100" value="70">
+          <button id="applyBody">Apply</button>
+        </div>
+        <div class="dev-row">
+          <input id="interestSubject" placeholder="interest subject" value="synthetic life">
+          <input id="interestValue" type="number" min="0" max="100" value="80">
+          <button id="applyInterest">Apply</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <main id="timeline">
+    <div id="empty" class="empty">The session transcript will appear here. Private thoughts are visible because this is a research interface, not the character's own view.</div>
+  </main>
+
+  <div class="composer">
+    <div id="busy" class="busy"><span class="spinner"></span><span>Model is working...</span></div>
+    <div id="error" class="error"></div>
+    <div class="compose-row">
+      <input id="message" autocomplete="off" autocapitalize="sentences" placeholder="Say something to the character">
+      <button id="send" class="send">Send</button>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const timeline = document.getElementById('timeline');
+  const empty = document.getElementById('empty');
+  const message = document.getElementById('message');
+  const send = document.getElementById('send');
+  const busy = document.getElementById('busy');
+  const errorBox = document.getElementById('error');
+  const modelLabel = document.getElementById('model');
+  const dot = document.getElementById('dot');
+  const showThoughts = document.getElementById('showThoughts');
+  const showExperience = document.getElementById('showExperience');
+  let isBusy = false;
+  let lastId = 0;
+
+  function setBusy(value) {
+    isBusy = value;
+    busy.classList.toggle('show', value);
+    send.disabled = value;
+    message.disabled = value;
+    document.querySelectorAll('.chip').forEach(b => b.disabled = value);
+  }
+
+  function showError(text) {
+    errorBox.textContent = text || '';
+    errorBox.classList.toggle('show', Boolean(text));
+  }
+
+  function addEntry(kind, text, label) {
+    if (kind === 'thought' && !showThoughts.checked) return;
+    if (kind === 'experience' && !showExperience.checked) return;
+    if (empty) empty.style.display = 'none';
+    const entry = document.createElement('div');
+    entry.className = `entry ${kind}`;
+    const title = document.createElement('div');
+    title.className = 'label';
+    title.textContent = label || ({
+      thought: 'Private thought', spoken: 'Aloud', experience: 'Experience',
+      action: 'Action', memory: 'Memory', user: 'Jay'
+    }[kind] || kind);
+    const body = document.createElement('div');
+    body.className = 'text';
+    body.textContent = text;
+    entry.append(title, body);
+    timeline.appendChild(entry);
+    timeline.scrollTop = timeline.scrollHeight;
+  }
+
+  function renderEvents(events) {
+    for (const event of events || []) {
+      lastId = Math.max(lastId, Number(event.id || 0));
+      addEntry(event.kind, event.text);
+    }
+  }
+
+  async function api(path, payload) {
+    setBusy(true);
+    showError('');
+    try {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload || {})
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      renderEvents(data.events);
+      if (data.last_id) lastId = Math.max(lastId, data.last_id);
+      return data;
+    } catch (err) {
+      showError(String(err.message || err));
+      throw err;
+    } finally {
+      setBusy(false);
+      message.focus();
+    }
+  }
+
+  async function sendMessage() {
+    const text = message.value.trim();
+    if (!text || isBusy) return;
+    message.value = '';
+    addEntry('user', text, 'Jay');
+    await api('/api/message', {text}).catch(() => {});
+  }
+
+  send.addEventListener('click', sendMessage);
+  message.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+  });
+
+  document.querySelectorAll('[data-action="idle"]').forEach(button => {
+    button.addEventListener('click', () => api('/api/idle', {seconds: Number(button.dataset.seconds)}).catch(() => {}));
+  });
+  document.querySelector('[data-action="thought"]').addEventListener('click', () => api('/api/thought', {}).catch(() => {}));
+  document.querySelector('[data-action="hunger"]').addEventListener('click', () => api('/api/body', {channel: 'hunger', value: 90}).catch(() => {}));
+  document.getElementById('applyBody').addEventListener('click', () => api('/api/body', {
+    channel: document.getElementById('bodyChannel').value,
+    value: Number(document.getElementById('bodyValue').value)
+  }).catch(() => {}));
+  document.getElementById('applyInterest').addEventListener('click', () => api('/api/interest', {
+    subject: document.getElementById('interestSubject').value,
+    value: Number(document.getElementById('interestValue').value)
+  }).catch(() => {}));
+
+  function rerenderVisibility() {
+    document.querySelectorAll('.entry.thought').forEach(el => el.style.display = showThoughts.checked ? '' : 'none');
+    document.querySelectorAll('.entry.experience').forEach(el => el.style.display = showExperience.checked ? '' : 'none');
+  }
+  showThoughts.addEventListener('change', rerenderVisibility);
+  showExperience.addEventListener('change', rerenderVisibility);
+
+  async function boot() {
+    try {
+      const response = await fetch('/api/status', {cache: 'no-store'});
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Could not connect');
+      dot.classList.add('ok');
+      modelLabel.textContent = `${data.character} | ${data.model}`;
+      renderEvents(data.events);
+      lastId = Number(data.last_id || lastId);
+    } catch (err) {
+      modelLabel.textContent = 'Disconnected';
+      showError(String(err.message || err));
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
