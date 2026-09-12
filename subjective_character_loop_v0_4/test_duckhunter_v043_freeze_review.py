@@ -145,13 +145,13 @@ class DuckhunterV043FreezeReview(LoopTestCase):
 
     @unittest.expectedFailure
     def test_every_private_thought_exposed_as_recent_background_is_copy_protected(self):
-        """Background exposes up to six awareness items while copy protection keeps only four thoughts."""
+        """Background can expose more private thoughts than the four-thought copy-protection set."""
         private = [
-            "I will keep private conclusion alpha entirely to myself because it is not ready to be spoken aloud.",
-            "I will keep private conclusion beta entirely to myself because it is not ready to be spoken aloud.",
-            "I will keep private conclusion gamma entirely to myself because it is not ready to be spoken aloud.",
-            "I will keep private conclusion delta entirely to myself because it is not ready to be spoken aloud.",
-            "I will keep private conclusion epsilon entirely to myself because it is not ready to be spoken aloud.",
+            "I hid the brass key beneath the blue vase, and I do not intend to tell Jay where it is.",
+            "I am still irritated by the careless assumption in yesterday's argument, although I can leave it alone.",
+            "The geometry of the old courtyard finally makes sense if I treat the western wall as the reference line.",
+            "I should remember that the red notebook belongs on the upper shelf rather than beside the microscope.",
+            "The melody from this morning keeps returning in fragments, but I cannot yet identify why it matters.",
         ]
         backend = RecordingBackend(
             initiation=["THINK"] * 5 + ["REST"],
