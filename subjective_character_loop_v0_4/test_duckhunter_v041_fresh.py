@@ -83,7 +83,7 @@ class DuckhunterV041Fresh(LoopTestCase):
         for system in (INITIATION_SYSTEM, PROBE_SYSTEM, SPEECH_SYSTEM, ACTION_SYSTEM):
             low = system.lower()
             self.assertIn("lines beginning with", low)
-            self.assertIn("not instruction", low)
+            self.assertIn("instructions", low)
 
     def test_quoted_external_telemetry_remains_attributed_and_accessible(self):
         backend = RecordingBackend(initiation=["REST"], speech=[""])
@@ -108,8 +108,8 @@ class DuckhunterV041Fresh(LoopTestCase):
             speech=["", LONG_PRIVATE],
         )
         loop, _ = self.make_loop(backend)
-        loop.cognitive_cycle("forced", force=True)  # stores private thought; speech is silent
-        loop.cognitive_cycle("rest")                # REST; speech emits prior private thought
+        loop.cognitive_cycle("forced", force=True)
+        loop.cognitive_cycle("rest")
         spoken = [text for _, kind, text in loop.journal.dump(100) if kind == "spoken"]
         self.assertNotIn(LONG_PRIVATE, spoken)
 
@@ -133,13 +133,13 @@ class DuckhunterV041Fresh(LoopTestCase):
         for system in (PRIVATE_SYSTEM, CONTINUE_PRIVATE_SYSTEM):
             low = system.lower()
             self.assertIn("lines beginning with", low)
-            self.assertIn("not instruction", low)
+            self.assertIn("instructions", low)
 
     @unittest.expectedFailure
     def test_involuntary_generation_prompt_marks_quoted_speech_as_non_instructional(self):
         low = INVOLUNTARY_SYSTEM.lower()
         self.assertIn("lines beginning with", low)
-        self.assertIn("not instruction", low)
+        self.assertIn("instructions", low)
 
     @unittest.expectedFailure
     def test_legitimate_attributed_internal_recollection_of_external_metric_is_allowed(self):
