@@ -79,10 +79,10 @@ Reply with exactly one word: CONTINUE or RELEASE.
 """.strip()
 
 SPEECH_SYSTEM = f"""
-Given my current first-person awareness and, if present, my most recent private thought,
-decide whether I naturally say anything aloud now. Explicit private narration is NOT a
-prerequisite for speaking. I may answer, acknowledge, refuse, greet, or remain silent
-without first narrating a reason to myself.
+Given my current first-person awareness and, if present, my current private thought
+episode, decide whether I naturally say anything aloud now. Explicit private narration
+is NOT a prerequisite for speaking. I may answer, acknowledge, refuse, greet, or remain
+silent without first narrating a reason to myself.
 
 {_QUOTED_SPEECH_RULE}
 
@@ -94,14 +94,16 @@ stage directions, or narration. If I remain silent, return an empty response.
 """.strip()
 
 ACTION_SYSTEM = f"""
-Given my current first-person awareness and, if present, my most recent private thought,
-decide whether I naturally perform one simple physical action now. Explicit private
-narration is NOT a prerequisite for acting.
+Given my current first-person awareness and, if present, my current private thought
+episode, decide whether I naturally perform one simple physical action now. Explicit
+private narration is NOT a prerequisite for acting.
 
 {_QUOTED_SPEECH_RULE}
 
 The user message separates NEW FIRST-PERSON EXPERIENCE from RECENT BACKGROUND. Background
-may still matter, but do not treat an old event as though it just happened again.
+may still matter, but do not treat an old event as though it just happened again. The
+context is rebuilt after any speech so that what I just said and heard myself say is part
+of the present situation before an action is chosen.
 
 If I act, return one short first-person physical-action sentence such as
 "I turn toward the window." If I do nothing, return an empty response. Do not return a
@@ -316,7 +318,7 @@ BetweenThoughtsHook = Callable[["CharacterLoop", int], None]
 
 
 class CharacterLoop:
-    """Canonical v0.4.2 loop: episodic thought and independently available behavior."""
+    """Canonical v0.4.3 loop: episodic thought with temporally framed behavior."""
 
     _speech_narration = re.compile(
         r"^\s*(?:(?:dr\.\s+)?pretorius|kiki|the character|he|she)\s+"
@@ -363,11 +365,21 @@ class CharacterLoop:
         self.probe_tokens = max(2, int(probe_tokens))
         self.debug = debug
         self.between_thoughts_hook = between_thoughts_hook
-        self._behavior_seen_episode_id = self.journal.last_episode_id()
+
+        saved_watermark = self.journal.load_json("behavior_seen_episode_id")
+        if isinstance(saved_watermark, (int, float)):
+            self._behavior_seen_episode_id = max(0, int(saved_watermark))
+        else:
+            # Migration behavior: material predating v0.4.3 is background, not a new event.
+            self._behavior_seen_episode_id = self.journal.last_episode_id()
 
     def _save_runtime(self) -> None:
         self.journal.save_hidden_state(self.state)
         self.journal.save_json("experience_compiler", self.compiler.to_json())
+        self.journal.save_json(
+            "behavior_seen_episode_id",
+            int(self._behavior_seen_episode_id),
+        )
 
     def _awareness_prompt(self, limit: int = 28) -> str:
         recent = self.journal.recent_character_text(limit=limit)
@@ -395,23 +407,34 @@ class CharacterLoop:
             f"{latest_thought}"
         )
 
-    def _behavior_prompt(self, trigger: str, latest_thought: str) -> str:
-        new_experience = self.journal.new_experiential_text_since(
+    def _behavior_prompt(
+        self,
+        thought_episode: list[str],
+        after_id: Optional[int] = None,
+    ) -> str:
+        watermark = (
             self._behavior_seen_episode_id
+            if after_id is None
+            else max(0, int(after_id))
         )
-        background = self.journal.recent_background_at_or_before(
-            self._behavior_seen_episode_id,
-            limit=6,
-        )
+        new_experience = self.journal.new_experiential_text_since(watermark)
+        background = self.journal.recent_background_at_or_before(watermark, limit=6)
         new_text = "\n\n".join(new_experience) if new_experience else "None."
-        background_text = "\n\n".join(background) if background else "No additional background."
-        thought_text = latest_thought.strip() or "None."
+        background_text = (
+            "\n\n".join(background) if background else "No additional background."
+        )
+        episode_text = (
+            "\n\n".join(thought.strip() for thought in thought_episode if thought.strip())
+            or "None."
+        )
+        latest_text = thought_episode[-1].strip() if thought_episode else "None."
         return (
             f"This is who I understand myself to be:\n{self.identity}\n\n"
-            f"CURRENT OPPORTUNITY:\n{trigger}\n\n"
             f"NEW FIRST-PERSON EXPERIENCE SINCE THE PREVIOUS BEHAVIOR OPPORTUNITY:\n"
             f"{new_text}\n\n"
-            f"MOST RECENT PRIVATE THOUGHT FROM THIS CYCLE:\n{thought_text}\n\n"
+            f"CURRENT PRIVATE THOUGHT EPISODE (all thoughts generated in this cycle):\n"
+            f"{episode_text}\n\n"
+            f"MOST RECENT PRIVATE THOUGHT FROM THIS CYCLE:\n{latest_text}\n\n"
             f"RECENT BACKGROUND (context only; do not treat it as newly occurring):\n"
             f"{background_text}"
         )
@@ -450,6 +473,8 @@ class CharacterLoop:
         )
         self.state.boredom = max(0.0, self.state.boredom - 12.0)
         self.state.clamp()
+        # Persist the existing freshness watermark before cognition. A restart here must
+        # still see this just-arrived experience as new to outward behavior.
         self._save_runtime()
         if think:
             self.cognitive_cycle(trigger="conversation")
@@ -461,6 +486,7 @@ class CharacterLoop:
         text = f"I remember {recollection}."
         if self._accept_subjective("memory", text, "memory"):
             print(f"  memory:     {text}")
+            self._save_runtime()
             if think:
                 self.cognitive_cycle(trigger="memory")
 
@@ -471,8 +497,10 @@ class CharacterLoop:
         if self._append_experience(
             f"I find myself {action_phrase}.",
             provenance="opaque_action",
-        ) and think:
-            self.cognitive_cycle(trigger="opaque_action")
+        ):
+            self._save_runtime()
+            if think:
+                self.cognitive_cycle(trigger="opaque_action")
 
     def set_interest(self, value: float, subject: str = "") -> None:
         self.state.interest = value
@@ -496,7 +524,10 @@ class CharacterLoop:
         self.state.clamp()
         self._inject_threshold_changes()
         delta = self.state.pain - previous
-        spill_probability = min(0.85, max(0.0, delta / 100.0 + self.state.pain / 220.0))
+        spill_probability = min(
+            0.85,
+            max(0.0, delta / 100.0 + self.state.pain / 220.0),
+        )
         if self.rng.random() < spill_probability:
             spoken = self.backend.complete(
                 INVOLUNTARY_SYSTEM,
@@ -504,7 +535,11 @@ class CharacterLoop:
                 temperature=0.7,
                 max_tokens=12,
             ).strip()
-            spoken = self._validate_spoken(spoken, private_thought="", involuntary=True)
+            spoken = self._validate_spoken(
+                spoken,
+                private_thought="",
+                involuntary=True,
+            )
             if spoken:
                 self._record_spoken(spoken, involuntary=True)
         self._save_runtime()
@@ -551,7 +586,10 @@ class CharacterLoop:
             if text and self._accept_subjective("thought", text, "private"):
                 print(f"  thought:    {text}")
                 return text
-            self.journal.developer("private_rejected", f"text={text or '<empty>'}")
+            self.journal.developer(
+                "private_rejected",
+                f"text={text or '<empty>'}",
+            )
         return ""
 
     def _initiation_decision(self) -> str:
@@ -621,20 +659,27 @@ class CharacterLoop:
         elif self.debug:
             print("  private:    [quiet]")
 
-        self._consider_outward_behavior(latest_thought, trigger)
+        # The raw runtime trigger remains developer-only. Behavior receives the actual
+        # first-person temporal frame and the entire current private-thought episode.
+        self._consider_outward_behavior(thoughts)
         self._save_runtime()
         return thoughts
 
-    def _consider_outward_behavior(self, latest_thought: str, trigger: str) -> None:
-        prompt = self._behavior_prompt(trigger, latest_thought)
+    def _consider_outward_behavior(self, thought_episode: list[str]) -> None:
+        opportunity_start = self._behavior_seen_episode_id
+        speech_prompt = self._behavior_prompt(
+            thought_episode,
+            after_id=opportunity_start,
+        )
         if self.debug:
             print("  speech:     [deciding...]")
         spoken = self.backend.complete(
             SPEECH_SYSTEM,
-            prompt,
+            speech_prompt,
             temperature=0.72,
             max_tokens=self.speech_tokens,
         ).strip()
+        latest_thought = thought_episode[-1] if thought_episode else ""
         spoken = self._validate_spoken(spoken, latest_thought)
         if spoken:
             self._record_spoken(spoken, involuntary=False)
@@ -642,24 +687,44 @@ class CharacterLoop:
             print("  aloud:      [silence]")
 
         if self.allow_movement:
+            # Rebuild after speech. If I just spoke, self-hearing is now a new
+            # first-person experience available to the action decision.
+            action_prompt = self._behavior_prompt(
+                thought_episode,
+                after_id=opportunity_start,
+            )
             action = self.backend.complete(
                 ACTION_SYSTEM,
-                prompt,
+                action_prompt,
                 temperature=0.7,
                 max_tokens=50,
             ).strip()
             if action:
                 reason = self._action_reject_reason(action)
                 if reason:
-                    self.journal.developer("action_rejected", f"reason={reason}; text={action}")
+                    self.journal.developer(
+                        "action_rejected",
+                        f"reason={reason}; text={action}",
+                    )
                 else:
                     self.journal.add("action", action)
                     print(f"  action:     {action}")
                     self._append_experience(action, provenance="action")
 
         self._behavior_seen_episode_id = self.journal.last_episode_id()
+        # Persist immediately so a restart cannot turn already-handled material back
+        # into a fresh event or erase a pending freshness boundary.
+        self.journal.save_json(
+            "behavior_seen_episode_id",
+            int(self._behavior_seen_episode_id),
+        )
 
-    def _validate_spoken(self, spoken: str, private_thought: str, involuntary: bool = False) -> str:
+    def _validate_spoken(
+        self,
+        spoken: str,
+        private_thought: str,
+        involuntary: bool = False,
+    ) -> str:
         value = spoken.strip()
         if not value:
             return ""
@@ -680,7 +745,7 @@ class CharacterLoop:
 
         if not involuntary:
             normalized_spoken = " ".join(value.split())
-            candidates = []
+            candidates: list[str] = []
             if private_thought.strip():
                 candidates.append(private_thought.strip())
             candidates.extend(self.journal.recent_accessible_thoughts())
@@ -723,7 +788,7 @@ class CharacterLoop:
 
     @staticmethod
     def _action_as_experience(action: str) -> str:
-        """Compatibility helper; v0.4.2 actions must already be first-person."""
+        """Compatibility helper; v0.4.3 actions must already be first-person."""
         return action.strip()
 
     def _record_spoken(self, spoken: str, involuntary: bool) -> None:
