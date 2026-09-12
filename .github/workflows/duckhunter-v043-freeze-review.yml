@@ -1,0 +1,25 @@
+name: DUCKHunter v0.4.3 freeze review
+
+on:
+  push:
+    branches: [duckhunter-v043-freeze-review-20260912]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    defaults:
+      run:
+        working-directory: subjective_character_loop_v0_4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run frozen v0.4.3 baseline suite
+        run: python -m unittest -v test_boundaries.py test_continuation.py test_initiation.py test_v041_hardening.py test_v042_freeze.py test_v043_freeze.py
+      - name: Run fresh DuckHunter v0.4.3 freeze probes
+        run: python -m unittest -v test_duckhunter_v043_freeze_review.py
