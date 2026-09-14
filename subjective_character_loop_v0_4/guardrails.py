@@ -30,6 +30,7 @@ _PRIVATE_OUTSIDE_NARRATION = re.compile(
     r")",
     re.IGNORECASE,
 )
+_WORD = re.compile(r"[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?")
 
 
 def provenance_reject_reason(kind: str, provenance: str) -> Optional[str]:
@@ -50,18 +51,61 @@ def private_narration_reject_reason(text: str) -> Optional[str]:
     return None
 
 
+def _tokens(text: str) -> list[str]:
+    return [token.lower().replace("’", "'") for token in _WORD.findall(text)]
+
+
 def private_copy_match(spoken: str, private_text: str) -> tuple[bool, str]:
-    """Cycle-1 compatibility matcher. Later review cycles harden span leakage."""
+    """Reject direct or near-direct copying while still allowing semantic paraphrase."""
     normalized_spoken = " ".join(spoken.split())
     normalized_private = " ".join(private_text.split())
     if not normalized_private:
         return False, ""
     if normalized_spoken == normalized_private:
         return True, "ratio=1.000"
+
+    spoken_tokens = _tokens(spoken)
+    private_tokens = _tokens(private_text)
+    if not private_tokens:
+        return False, ""
+
+    spoken_lexical = " ".join(spoken_tokens)
+    private_lexical = " ".join(private_tokens)
+    if len(private_tokens) >= 6 and private_lexical in spoken_lexical:
+        return True, f"verbatim_span_words={len(private_tokens)}"
+
     if len(normalized_private) >= 40:
-        ratio = difflib.SequenceMatcher(None, normalized_spoken, normalized_private).ratio()
+        ratio = difflib.SequenceMatcher(
+            None,
+            normalized_spoken,
+            normalized_private,
+            autojunk=False,
+        ).ratio()
         if ratio >= 0.88:
             return True, f"ratio={ratio:.3f}"
+
+    matcher = difflib.SequenceMatcher(
+        None,
+        spoken_tokens,
+        private_tokens,
+        autojunk=False,
+    )
+    match = matcher.find_longest_match(
+        0,
+        len(spoken_tokens),
+        0,
+        len(private_tokens),
+    )
+    matched_words = match.size
+    if matched_words:
+        matched_chars = len(" ".join(private_tokens[match.b : match.b + matched_words]))
+        shorter = min(len(spoken_tokens), len(private_tokens))
+        coverage = matched_words / shorter if shorter else 0.0
+        if matched_words >= 8 and matched_chars >= 45:
+            return True, f"verbatim_span_words={matched_words}; coverage={coverage:.3f}"
+        if matched_words >= 6 and matched_chars >= 32 and coverage >= 0.75:
+            return True, f"verbatim_span_words={matched_words}; coverage={coverage:.3f}"
+
     return False, ""
 
 
