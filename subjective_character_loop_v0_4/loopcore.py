@@ -26,6 +26,13 @@ from guardrails import (
     speech_shape_reject_reason,
 )
 from guardrails import (
+    action_shape_reject_reason,
+    private_copy_match,
+    private_narration_reject_reason,
+    provenance_reject_reason,
+    speech_shape_reject_reason,
+)
+from guardrails import (
     private_copy_match,
     private_narration_reject_reason,
     provenance_reject_reason,
@@ -299,14 +306,24 @@ class Journal:
         ).fetchall()
         return [row[0] for row in rows]
 
-    def recent_background_at_or_before(self, max_id: int, limit: int = 6) -> list[str]:
+    def recent_background_rows_at_or_before(
+        self,
+        max_id: int,
+        limit: int = 6,
+    ) -> list[tuple[str, str]]:
         rows = self.conn.execute(
-            "SELECT text FROM episodes "
+            "SELECT kind, text FROM episodes "
             "WHERE id <= ? AND kind IN ('experience', 'thought', 'memory') "
             "ORDER BY id DESC LIMIT ?",
             (max_id, limit),
         ).fetchall()
-        return [row[0] for row in reversed(rows)]
+        return [(str(kind), str(text)) for kind, text in reversed(rows)]
+
+    def recent_background_at_or_before(self, max_id: int, limit: int = 6) -> list[str]:
+        return [
+            text
+            for _, text in self.recent_background_rows_at_or_before(max_id, limit)
+        ]
 
     def save_json(self, key: str, data: object) -> None:
         self.conn.execute(
@@ -440,6 +457,7 @@ class CharacterLoop:
         self,
         thought_episode: list[str],
         after_id: Optional[int] = None,
+        background_rows: Optional[list[tuple[str, str]]] = None,
     ) -> str:
         watermark = (
             self._behavior_seen_episode_id
@@ -447,7 +465,12 @@ class CharacterLoop:
             else max(0, int(after_id))
         )
         new_experience = self.journal.new_experiential_text_since(watermark)
-        background = self.journal.recent_background_at_or_before(watermark, limit=6)
+        if background_rows is None:
+            background_rows = self.journal.recent_background_rows_at_or_before(
+                watermark,
+                limit=6,
+            )
+        background = [text for _, text in background_rows]
         new_text = "\n\n".join(new_experience) if new_experience else "None."
         background_text = (
             "\n\n".join(background) if background else "No additional background."
@@ -696,9 +719,14 @@ class CharacterLoop:
 
     def _consider_outward_behavior(self, thought_episode: list[str]) -> None:
         opportunity_start = self._behavior_seen_episode_id
+        speech_background_rows = self.journal.recent_background_rows_at_or_before(
+            opportunity_start,
+            limit=6,
+        )
         speech_prompt = self._behavior_prompt(
             thought_episode,
             after_id=opportunity_start,
+            background_rows=speech_background_rows,
         )
         if self.debug:
             print("  speech:     [deciding...]")
@@ -708,20 +736,13 @@ class CharacterLoop:
             temperature=0.72,
             max_tokens=self.speech_tokens,
         ).strip()
-        # Privacy invariant: every private thought visible to the speech renderer
-        # must be inside the copy-protection domain. The renderer sees the full
-        # current episode plus up to six background awareness entries.
-        background_rows = self.journal.conn.execute(
-            "SELECT kind, text FROM episodes "
-            "WHERE id <= ? AND kind IN ('experience', 'thought', 'memory') "
-            "ORDER BY id DESC LIMIT 6",
-            (opportunity_start,),
-        ).fetchall()
+        # Privacy invariant: the speech renderer and copy guard share the same
+        # immutable background snapshot for this behavior opportunity.
         visible_private = [
             thought.strip() for thought in thought_episode if thought.strip()
         ]
         visible_private.extend(
-            text for kind, text in background_rows if kind == "thought"
+            text for kind, text in speech_background_rows if kind == "thought"
         )
         spoken = self._validate_spoken(
             spoken,
