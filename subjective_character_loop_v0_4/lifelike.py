@@ -18,6 +18,14 @@ _CLOSURE_MARKERS = (
     "it doesn't matter anymore", "it does not matter anymore", "i was wrong about that",
     "i was mistaken about that",
 )
+_TENSION_MARKERS = (
+    " but ", "although ", "even though ", "part of me", "at the same time",
+    "on the other hand", "and yet ", "still, part of me", "i also want",
+)
+_TENSION_RESOLUTION_MARKERS = (
+    "i have decided", "i've decided", "i am choosing", "i'm choosing",
+    "i no longer feel torn", "i know which matters more", "i know which one matters more",
+)
 _STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "because", "been", "but", "by",
     "do", "for", "from", "had", "has", "have", "i", "if", "in", "is", "it", "me",
@@ -67,6 +75,24 @@ class LingeringConcern:
 
 
 @dataclass
+class InnerTension:
+    text: str
+    alive: bool = True
+
+    def to_json(self) -> dict[str, object]:
+        return {"text": self.text, "alive": self.alive}
+
+    @classmethod
+    def from_json(cls, data: object) -> Optional["InnerTension"]:
+        if not isinstance(data, dict):
+            return None
+        text = str(data.get("text", "")).strip()
+        if not text:
+            return None
+        return cls(text=text, alive=bool(data.get("alive", True)))
+
+
+@dataclass
 class FamiliarExperience:
     text: str
     repetitions: int = 1
@@ -91,9 +117,11 @@ class FirstPersonLife:
         self,
         concerns: Optional[Iterable[LingeringConcern]] = None,
         familiar: Optional[Iterable[FamiliarExperience]] = None,
+        tensions: Optional[Iterable[InnerTension]] = None,
     ) -> None:
         self.concerns = list(concerns or [])
         self.familiar = list(familiar or [])
+        self.tensions = list(tensions or [])
 
     @classmethod
     def from_json(cls, data: object) -> "FirstPersonLife":
@@ -109,12 +137,18 @@ class FirstPersonLife:
             item = FamiliarExperience.from_json(raw)
             if item is not None:
                 familiar.append(item)
-        return cls(concerns, familiar)
+        tensions = []
+        for raw in data.get("tensions", []):
+            tension = InnerTension.from_json(raw)
+            if tension is not None:
+                tensions.append(tension)
+        return cls(concerns, familiar, tensions)
 
     def to_json(self) -> dict[str, object]:
         return {
             "concerns": [concern.to_json() for concern in self.concerns],
             "familiar": [item.to_json() for item in self.familiar],
+            "tensions": [tension.to_json() for tension in self.tensions],
         }
 
     @staticmethod
@@ -127,6 +161,16 @@ class FirstPersonLife:
         low = text.lower().strip()
         return any(marker in low for marker in _CLOSURE_MARKERS)
 
+    @staticmethod
+    def _looks_tense(text: str) -> bool:
+        low = f" {text.lower().strip()} "
+        return any(marker in low for marker in _TENSION_MARKERS)
+
+    @staticmethod
+    def _looks_tension_resolution(text: str) -> bool:
+        low = text.lower().strip()
+        return any(marker in low for marker in _TENSION_RESOLUTION_MARKERS)
+
     def _nearest_alive(self, text: str, minimum: float = 0.28) -> Optional[LingeringConcern]:
         best: Optional[LingeringConcern] = None
         best_score = minimum
@@ -138,10 +182,36 @@ class FirstPersonLife:
                 best, best_score = concern, score
         return best
 
+    def _nearest_tension(self, text: str, minimum: float = 0.34) -> Optional[InnerTension]:
+        best: Optional[InnerTension] = None
+        best_score = minimum
+        for tension in self.tensions:
+            if not tension.alive:
+                continue
+            score = _similarity(text, tension.text)
+            if score >= best_score:
+                best, best_score = tension, score
+        return best
+
     def observe_thought(self, text: str) -> None:
         value = " ".join(text.split()).strip()
         if not value:
             return
+
+        if self._looks_tension_resolution(value):
+            nearest_tension = self._nearest_tension(value, minimum=0.20)
+            if nearest_tension is not None:
+                nearest_tension.alive = False
+        elif self._looks_tense(value):
+            nearest_tension = self._nearest_tension(value, minimum=0.34)
+            if nearest_tension is not None:
+                nearest_tension.text = value
+            else:
+                self.tensions.append(InnerTension(value))
+            # A live contradiction is already represented as one continuing piece of
+            # first-person life. Do not duplicate it as a generic unresolved concern.
+            return
+
         if self._looks_closed(value):
             nearest = self._nearest_alive(value, minimum=0.18)
             if nearest is not None:
@@ -166,9 +236,6 @@ class FirstPersonLife:
         value = text.strip()
         if not value:
             return []
-        # Habituation belongs only to recurring internal/body sensation. Speech and
-        # ordinary events stay fresh because repetition by another person can itself
-        # be meaningful and should never silently disappear.
         if provenance != "body":
             return [value]
         item = self._familiar_item(value)
@@ -192,18 +259,30 @@ class FirstPersonLife:
     def alive_concerns(self) -> list[str]:
         return [concern.text for concern in self.concerns if concern.alive]
 
+    def alive_tensions(self) -> list[str]:
+        return [tension.text for tension in self.tensions if tension.alive]
+
     def render_private_context(self, limit: int = 3) -> str:
+        parts: list[str] = []
         alive = self.alive_concerns()[-max(0, int(limit)) :]
-        if not alive:
-            return ""
         if len(alive) == 1:
-            return (
+            parts.append(
                 "Something is still quietly unresolved for me. I do not have to think "
                 f"about it right now, but I am still carrying this: {alive[0]}"
             )
-        joined = "\n".join(f"I am still carrying this: {text}" for text in alive)
-        return (
-            "A few things remain unresolved in the background of my life. They do not "
-            "all require attention now, and I do not have to resolve them merely because "
-            "they are present.\n" + joined
-        )
+        elif alive:
+            joined = "\n".join(f"I am still carrying this: {text}" for text in alive)
+            parts.append(
+                "A few things remain unresolved in the background of my life. They do not "
+                "all require attention now, and I do not have to resolve them merely because "
+                "they are present.\n" + joined
+            )
+
+        tensions = self.alive_tensions()[-max(0, int(limit)) :]
+        if tensions:
+            joined = "\n".join(
+                f"I can still feel both sides of this without forcing a decision: {text}"
+                for text in tensions
+            )
+            parts.append(joined)
+        return "\n\n".join(parts)
