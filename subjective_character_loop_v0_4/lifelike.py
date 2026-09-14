@@ -110,6 +110,26 @@ class FamiliarExperience:
         return cls(text=text, repetitions=max(1, int(data.get("repetitions", 1))))
 
 
+@dataclass
+class ProspectiveIntention:
+    text: str
+    cue: str
+    active: bool = False
+
+    def to_json(self) -> dict[str, object]:
+        return {"text": self.text, "cue": self.cue, "active": self.active}
+
+    @classmethod
+    def from_json(cls, data: object) -> Optional["ProspectiveIntention"]:
+        if not isinstance(data, dict):
+            return None
+        text = str(data.get("text", "")).strip()
+        cue = str(data.get("cue", "")).strip()
+        if not text or not cue:
+            return None
+        return cls(text=text, cue=cue, active=bool(data.get("active", False)))
+
+
 class FirstPersonLife:
     """Persistent first-person carryover expressed as language, not telemetry."""
 
@@ -118,37 +138,29 @@ class FirstPersonLife:
         concerns: Optional[Iterable[LingeringConcern]] = None,
         familiar: Optional[Iterable[FamiliarExperience]] = None,
         tensions: Optional[Iterable[InnerTension]] = None,
+        intentions: Optional[Iterable[ProspectiveIntention]] = None,
     ) -> None:
         self.concerns = list(concerns or [])
         self.familiar = list(familiar or [])
         self.tensions = list(tensions or [])
+        self.intentions = list(intentions or [])
 
     @classmethod
     def from_json(cls, data: object) -> "FirstPersonLife":
         if not isinstance(data, dict):
             return cls()
-        concerns = []
-        for raw in data.get("concerns", []):
-            concern = LingeringConcern.from_json(raw)
-            if concern is not None:
-                concerns.append(concern)
-        familiar = []
-        for raw in data.get("familiar", []):
-            item = FamiliarExperience.from_json(raw)
-            if item is not None:
-                familiar.append(item)
-        tensions = []
-        for raw in data.get("tensions", []):
-            tension = InnerTension.from_json(raw)
-            if tension is not None:
-                tensions.append(tension)
-        return cls(concerns, familiar, tensions)
+        concerns = [item for raw in data.get("concerns", []) if (item := LingeringConcern.from_json(raw))]
+        familiar = [item for raw in data.get("familiar", []) if (item := FamiliarExperience.from_json(raw))]
+        tensions = [item for raw in data.get("tensions", []) if (item := InnerTension.from_json(raw))]
+        intentions = [item for raw in data.get("intentions", []) if (item := ProspectiveIntention.from_json(raw))]
+        return cls(concerns, familiar, tensions, intentions)
 
     def to_json(self) -> dict[str, object]:
         return {
             "concerns": [concern.to_json() for concern in self.concerns],
             "familiar": [item.to_json() for item in self.familiar],
             "tensions": [tension.to_json() for tension in self.tensions],
+            "intentions": [intention.to_json() for intention in self.intentions],
         }
 
     @staticmethod
@@ -170,6 +182,20 @@ class FirstPersonLife:
     def _looks_tension_resolution(text: str) -> bool:
         low = text.lower().strip()
         return any(marker in low for marker in _TENSION_RESOLUTION_MARKERS)
+
+    @staticmethod
+    def _prospective_cue(text: str) -> str:
+        value = " ".join(text.split()).strip()
+        patterns = (
+            r"(?i)^when\s+(.+?),\s*",
+            r"(?i)^if\s+(.+?),\s*",
+            r"(?i)^next\s+time\s+(.+?),\s*",
+        )
+        for pattern in patterns:
+            match = re.match(pattern, value)
+            if match:
+                return match.group(1).strip()
+        return ""
 
     def _nearest_alive(self, text: str, minimum: float = 0.28) -> Optional[LingeringConcern]:
         best: Optional[LingeringConcern] = None
@@ -193,9 +219,25 @@ class FirstPersonLife:
                 best, best_score = tension, score
         return best
 
+    def _remember_intention(self, text: str, cue: str) -> None:
+        value = _normalized(text)
+        for intention in self.intentions:
+            if _normalized(intention.text) == value:
+                return
+            if _similarity(intention.text, text) >= 0.62 and _similarity(intention.cue, cue) >= 0.55:
+                intention.text = text
+                intention.cue = cue
+                return
+        self.intentions.append(ProspectiveIntention(text=text, cue=cue))
+
     def observe_thought(self, text: str) -> None:
         value = " ".join(text.split()).strip()
         if not value:
+            return
+
+        cue = self._prospective_cue(value)
+        if cue:
+            self._remember_intention(value, cue)
             return
 
         if self._looks_tension_resolution(value):
@@ -208,8 +250,6 @@ class FirstPersonLife:
                 nearest_tension.text = value
             else:
                 self.tensions.append(InnerTension(value))
-            # A live contradiction is already represented as one continuing piece of
-            # first-person life. Do not duplicate it as a generic unresolved concern.
             return
 
         if self._looks_closed(value):
@@ -232,10 +272,26 @@ class FirstPersonLife:
                 return item
         return None
 
+    @staticmethod
+    def _cue_matches(cue: str, experience: str) -> bool:
+        cue_words = _tokens(cue)
+        event_words = _tokens(experience)
+        if not cue_words or not event_words:
+            return False
+        overlap = len(cue_words & event_words)
+        if len(cue_words) <= 2:
+            return overlap == len(cue_words)
+        return overlap >= 2
+
     def process_experience(self, text: str, provenance: str) -> list[str]:
         value = text.strip()
         if not value:
             return []
+
+        for intention in self.intentions:
+            if not intention.active and self._cue_matches(intention.cue, value):
+                intention.active = True
+
         if provenance != "body":
             return [value]
         item = self._familiar_item(value)
@@ -249,6 +305,12 @@ class FirstPersonLife:
 
     def familiar_experiences(self) -> list[str]:
         return [item.text for item in self.familiar if item.repetitions >= 2]
+
+    def pending_intentions(self) -> list[str]:
+        return [intention.text for intention in self.intentions if not intention.active]
+
+    def active_intentions(self) -> list[str]:
+        return [intention.text for intention in self.intentions if intention.active]
 
     def observe_memory(self, text: str) -> None:
         return None
@@ -280,9 +342,15 @@ class FirstPersonLife:
 
         tensions = self.alive_tensions()[-max(0, int(limit)) :]
         if tensions:
-            joined = "\n".join(
+            parts.append("\n".join(
                 f"I can still feel both sides of this without forcing a decision: {text}"
                 for text in tensions
-            )
-            parts.append(joined)
+            ))
+
+        active = self.active_intentions()[-max(0, int(limit)) :]
+        if active:
+            parts.append("\n".join(
+                f"Something in what just happened brings back something I meant to do: {text}"
+                for text in active
+            ))
         return "\n\n".join(parts)
