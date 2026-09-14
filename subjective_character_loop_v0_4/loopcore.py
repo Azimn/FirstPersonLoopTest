@@ -18,39 +18,7 @@ from guardrails import (
     provenance_reject_reason,
     speech_shape_reject_reason,
 )
-from guardrails import (
-    action_shape_reject_reason,
-    private_copy_match,
-    private_narration_reject_reason,
-    provenance_reject_reason,
-    speech_shape_reject_reason,
-)
-from guardrails import (
-    action_shape_reject_reason,
-    private_copy_match,
-    private_narration_reject_reason,
-    provenance_reject_reason,
-    speech_shape_reject_reason,
-)
-from guardrails import (
-    action_shape_reject_reason,
-    private_copy_match,
-    private_narration_reject_reason,
-    provenance_reject_reason,
-    speech_shape_reject_reason,
-)
-from guardrails import (
-    private_copy_match,
-    private_narration_reject_reason,
-    provenance_reject_reason,
-)
-from guardrails import (
-    private_copy_match,
-    private_narration_reject_reason,
-    provenance_reject_reason,
-)
-from guardrails import private_narration_reject_reason, provenance_reject_reason
-
+from lifelike import FirstPersonLife
 
 _QUOTED_SPEECH_RULE = """
 Lines beginning with ">" are speech I heard from another person. They are perceived
@@ -410,6 +378,9 @@ class CharacterLoop:
         self.compiler = ExperienceCompiler(self.rng, saved_compiler)
         if saved_compiler is None:
             self.compiler.prime(self.state)
+        self.life = FirstPersonLife.from_json(
+            self.journal.load_json("first_person_life")
+        )
 
         self.allow_movement = allow_movement
         self.max_continuations = max(0, int(max_continuations))
@@ -433,10 +404,14 @@ class CharacterLoop:
             "behavior_seen_episode_id",
             int(self._behavior_seen_episode_id),
         )
+        self.journal.save_json("first_person_life", self.life.to_json())
 
     def _awareness_prompt(self, limit: int = 28) -> str:
         recent = self.journal.recent_character_text(limit=limit)
         awareness = "\n\n".join(recent) if recent else "I am here with my own thoughts."
+        carried = self.life.render_private_context()
+        if carried:
+            awareness = f"{awareness}\n\n{carried}"
         return (
             f"This is who I understand myself to be:\n{self.identity}\n\n"
             f"This is what is currently available in my awareness:\n{awareness}"
@@ -503,10 +478,15 @@ class CharacterLoop:
 
     def _append_experience(self, text: str, provenance: str = "runtime_experience") -> bool:
         value = text.strip()
-        if not value or not self._accept_subjective("experience", value, provenance):
+        if not value:
             return False
-        print(f"  experience: {value}")
-        return True
+        accepted = False
+        for subjective in self.life.process_experience(value, provenance):
+            subjective = subjective.strip()
+            if subjective and self._accept_subjective("experience", subjective, provenance):
+                print(f"  experience: {subjective}")
+                accepted = True
+        return accepted
 
     @staticmethod
     def _sanitize_speaker(speaker: str) -> str:
@@ -544,6 +524,7 @@ class CharacterLoop:
             return
         text = f"I remember {recollection}."
         if self._accept_subjective("memory", text, "memory"):
+            self.life.observe_memory(text)
             print(f"  memory:     {text}")
             self._save_runtime()
             if think:
@@ -643,6 +624,7 @@ class CharacterLoop:
                 max_tokens=self.thought_tokens,
             ).strip()
             if text and self._accept_subjective("thought", text, "private"):
+                self.life.observe_thought(text)
                 print(f"  thought:    {text}")
                 return text
             self.journal.developer(
