@@ -67,7 +67,13 @@ def _similarity(a: str, b: str) -> float:
     aa, bb = _tokens(a), _tokens(b)
     if not aa or not bb:
         return 0.0
-    return len(aa & bb) / len(aa | bb)
+    intersection = len(aa & bb)
+    jaccard = intersection / len(aa | bb)
+    overlap = intersection / min(len(aa), len(bb))
+    # Natural rephrasings often add reflective scaffolding such as "I keep coming back"
+    # while preserving the same concrete topic. Reward shared topic words without making
+    # two concerns identical merely because they share one generic word.
+    return max(jaccard, overlap * 0.72)
 
 
 @dataclass
