@@ -5,10 +5,51 @@ on:
     branches: [gpt56-four-cycle-hardening-20260913]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
+  apply-patches:
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    defaults:
+      run:
+        working-directory: subjective_character_loop_v0_4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gpt56-four-cycle-hardening-20260913
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply recorded hardening cycles
+        run: |
+          for script in apply_cycle*.py; do
+            [ -f "$script" ] || continue
+            echo "Applying $script"
+            python "$script"
+          done
+      - name: Commit generated production changes
+        id: commit
+        working-directory: .
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "gpt56-hardening-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add subjective_character_loop_v0_4/loopcore.py
+          git commit -m "Apply recorded hardening cycle patches"
+          git push origin HEAD:gpt56-four-cycle-hardening-20260913
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: apply-patches
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.11', '3.12']
     defaults:
@@ -16,13 +57,15 @@ jobs:
         working-directory: subjective_character_loop_v0_4
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: gpt56-four-cycle-hardening-20260913
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Run full suite
         run: python -m unittest -v
       - name: Compile production modules
-        run: python -m py_compile loopcore.py experience.py backends.py personas.py subjective_loop.py
+        run: python -m py_compile loopcore.py guardrails.py experience.py backends.py personas.py subjective_loop.py
       - name: Run scripted smoke session
         run: |
           rm -f smoke.sqlite3
