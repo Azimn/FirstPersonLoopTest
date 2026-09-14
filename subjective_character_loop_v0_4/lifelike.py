@@ -139,11 +139,15 @@ class FirstPersonLife:
         familiar: Optional[Iterable[FamiliarExperience]] = None,
         tensions: Optional[Iterable[InnerTension]] = None,
         intentions: Optional[Iterable[ProspectiveIntention]] = None,
+        returning_text: str = "",
+        recurrence_refractory: bool = False,
     ) -> None:
         self.concerns = list(concerns or [])
         self.familiar = list(familiar or [])
         self.tensions = list(tensions or [])
         self.intentions = list(intentions or [])
+        self.returning_text = returning_text.strip()
+        self.recurrence_refractory = bool(recurrence_refractory)
 
     @classmethod
     def from_json(cls, data: object) -> "FirstPersonLife":
@@ -153,7 +157,14 @@ class FirstPersonLife:
         familiar = [item for raw in data.get("familiar", []) if (item := FamiliarExperience.from_json(raw))]
         tensions = [item for raw in data.get("tensions", []) if (item := InnerTension.from_json(raw))]
         intentions = [item for raw in data.get("intentions", []) if (item := ProspectiveIntention.from_json(raw))]
-        return cls(concerns, familiar, tensions, intentions)
+        return cls(
+            concerns,
+            familiar,
+            tensions,
+            intentions,
+            returning_text=str(data.get("returning_text", "")),
+            recurrence_refractory=bool(data.get("recurrence_refractory", False)),
+        )
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -161,6 +172,8 @@ class FirstPersonLife:
             "familiar": [item.to_json() for item in self.familiar],
             "tensions": [tension.to_json() for tension in self.tensions],
             "intentions": [intention.to_json() for intention in self.intentions],
+            "returning_text": self.returning_text,
+            "recurrence_refractory": self.recurrence_refractory,
         }
 
     @staticmethod
@@ -186,12 +199,11 @@ class FirstPersonLife:
     @staticmethod
     def _prospective_cue(text: str) -> str:
         value = " ".join(text.split()).strip()
-        patterns = (
+        for pattern in (
             r"(?i)^when\s+(.+?),\s*",
             r"(?i)^if\s+(.+?),\s*",
             r"(?i)^next\s+time\s+(.+?),\s*",
-        )
-        for pattern in patterns:
+        ):
             match = re.match(pattern, value)
             if match:
                 return match.group(1).strip()
@@ -316,7 +328,26 @@ class FirstPersonLife:
         return None
 
     def advance(self, seconds: float, rng: object = None) -> list[str]:
-        return []
+        self.returning_text = ""
+        if self.recurrence_refractory:
+            self.recurrence_refractory = False
+            return []
+        if rng is None or seconds <= 0:
+            return []
+
+        candidates = self.alive_concerns() + self.alive_tensions()
+        if not candidates:
+            return []
+
+        # Time supplies only an opportunity for something unresolved to recur. There is
+        # no hidden psychological score or deterministic recurrence interval.
+        chance = min(0.35, max(0.0, float(seconds)) / 7200.0)
+        if rng.random() >= chance:
+            return []
+        index = min(len(candidates) - 1, int(rng.random() * len(candidates)))
+        self.returning_text = candidates[index]
+        self.recurrence_refractory = True
+        return [self.returning_text]
 
     def alive_concerns(self) -> list[str]:
         return [concern.text for concern in self.concerns if concern.alive]
@@ -324,33 +355,61 @@ class FirstPersonLife:
     def alive_tensions(self) -> list[str]:
         return [tension.text for tension in self.tensions if tension.alive]
 
+    def _foreground_entries(self, limit: int) -> list[tuple[str, str]]:
+        maximum = max(0, int(limit))
+        if maximum == 0:
+            return []
+
+        entries: list[tuple[str, str]] = []
+        seen: set[str] = set()
+
+        def add(kind: str, text: str) -> None:
+            value = text.strip()
+            key = _normalized(value)
+            if not value or key in seen or len(entries) >= maximum:
+                return
+            seen.add(key)
+            entries.append((kind, value))
+
+        if self.returning_text:
+            add("returning", self.returning_text)
+        for text in reversed(self.active_intentions()):
+            add("intention", text)
+        for text in reversed(self.alive_tensions()):
+            add("tension", text)
+        for text in reversed(self.alive_concerns()):
+            add("concern", text)
+        return entries
+
     def render_private_context(self, limit: int = 3) -> str:
+        entries = self._foreground_entries(limit)
+        if not entries:
+            return ""
+
+        only_one_concern = (
+            len(entries) == 1
+            and entries[0][0] == "concern"
+            and len(self.alive_concerns()) == 1
+        )
         parts: list[str] = []
-        alive = self.alive_concerns()[-max(0, int(limit)) :]
-        if len(alive) == 1:
-            parts.append(
-                "Something is still quietly unresolved for me. I do not have to think "
-                f"about it right now, but I am still carrying this: {alive[0]}"
-            )
-        elif alive:
-            joined = "\n".join(f"I am still carrying this: {text}" for text in alive)
-            parts.append(
-                "A few things remain unresolved in the background of my life. They do not "
-                "all require attention now, and I do not have to resolve them merely because "
-                "they are present.\n" + joined
-            )
-
-        tensions = self.alive_tensions()[-max(0, int(limit)) :]
-        if tensions:
-            parts.append("\n".join(
-                f"I can still feel both sides of this without forcing a decision: {text}"
-                for text in tensions
-            ))
-
-        active = self.active_intentions()[-max(0, int(limit)) :]
-        if active:
-            parts.append("\n".join(
-                f"Something in what just happened brings back something I meant to do: {text}"
-                for text in active
-            ))
+        for kind, text in entries:
+            if kind == "returning":
+                parts.append(
+                    f"Without my deciding to, my mind has drifted back to this: {text}"
+                )
+            elif kind == "intention":
+                parts.append(
+                    f"Something in what just happened brings back something I meant to do: {text}"
+                )
+            elif kind == "tension":
+                parts.append(
+                    f"I can still feel both sides of this without forcing a decision: {text}"
+                )
+            elif only_one_concern:
+                parts.append(
+                    "Something is still quietly unresolved for me. I do not have to think "
+                    f"about it right now, but I am still carrying this: {text}"
+                )
+            else:
+                parts.append(f"This is still somewhere in the back of my mind: {text}")
         return "\n\n".join(parts)
