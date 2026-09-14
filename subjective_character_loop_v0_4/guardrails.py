@@ -118,6 +118,12 @@ def speech_shape_reject_reason(text: str) -> Optional[str]:
         re.IGNORECASE,
     ):
         return "third_person_speech_narration"
+    if re.match(
+        r"^\s*I\s+(?:say|reply|answer|speak|tell|ask)\b",
+        value,
+        re.IGNORECASE,
+    ):
+        return "first_person_speech_narration"
     return None
 
 
@@ -130,4 +136,11 @@ def action_shape_reject_reason(text: str) -> Optional[str]:
         re.IGNORECASE,
     ):
         return "nonphysical_mental_content"
+    if re.match(
+        r"^\s*(?:I\s+am\b|I'm\b|I\s+feel\b|I\s+want\b|I\s+need\b|I\s+wish\b|"
+        r"I\s+intend\b|I\s+plan\b|I\s+decide\b|I\s+prefer\b|I\s+like\b|I\s+dislike\b)",
+        value,
+        re.IGNORECASE,
+    ):
+        return "nonphysical_state_or_intent"
     return None
