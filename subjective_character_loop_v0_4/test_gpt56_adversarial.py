@@ -54,3 +54,28 @@ class GPT56AdversarialTests(LoopTestCase):
             loop._validate_spoken(paraphrase, private_thought="", private_candidates=[private]),
             paraphrase,
         )
+
+    def test_speech_prompt_and_privacy_guard_share_one_background_snapshot(self):
+        private = (
+            "I buried the copper token beneath the old stone planter and I have not told "
+            "Jay because I want to keep that private for now."
+        )
+        backend = RecordingBackend(initiation=["REST"], speech=[private])
+        loop, _ = self.make_loop(backend)
+        self.assertTrue(loop._accept_subjective("thought", private, "private"))
+        loop._behavior_seen_episode_id = loop.journal.last_episode_id()
+
+        calls = []
+        original = loop.journal.recent_background_rows_at_or_before
+
+        def counted(max_id, limit=6):
+            calls.append((max_id, limit))
+            return original(max_id, limit)
+
+        loop.journal.recent_background_rows_at_or_before = counted
+        loop.cognitive_cycle("idle")
+
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(
+            any(kind == "spoken" and text == private for _, kind, text in loop.journal.dump())
+        )
