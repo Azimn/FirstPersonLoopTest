@@ -70,9 +70,6 @@ def _similarity(a: str, b: str) -> float:
     intersection = len(aa & bb)
     jaccard = intersection / len(aa | bb)
     overlap = intersection / min(len(aa), len(bb))
-    # Natural rephrasings often add reflective scaffolding such as "I keep coming back"
-    # while preserving the same concrete topic. Reward shared topic words without making
-    # two concerns identical merely because they share one generic word.
     return max(jaccard, overlap * 0.72)
 
 
@@ -95,14 +92,7 @@ class LingeringConcern:
 
 
 class FirstPersonLife:
-    """Persistent first-person carryover expressed as language, not telemetry.
-
-    The substrate keeps only character-readable natural-language material. Python data
-    structures exist for persistence and deduplication, but the character-facing state
-    is always rendered as ordinary first-person language. It is deliberately small: the
-    first responsibility is to let unfinished life remain unfinished across quiet turns
-    and restarts instead of making each cognitive cycle feel freshly instantiated.
-    """
+    """Persistent first-person carryover expressed as language, not telemetry."""
 
     def __init__(self, concerns: Optional[Iterable[LingeringConcern]] = None) -> None:
         self.concerns = list(concerns or [])
@@ -146,26 +136,20 @@ class FirstPersonLife:
         value = " ".join(text.split()).strip()
         if not value:
             return
-
         if self._looks_closed(value):
             nearest = self._nearest_alive(value, minimum=0.18)
             if nearest is not None:
                 nearest.alive = False
             return
-
         if not self._looks_unfinished(value):
             return
-
-        nearest = self._nearest_alive(value, minimum=0.45)
+        nearest = self._nearest_alive(value, minimum=0.40)
         if nearest is not None:
-            # Preserve the newest natural formulation without multiplying the concern.
             nearest.text = value
             return
         self.concerns.append(LingeringConcern(value))
 
     def process_experience(self, text: str, provenance: str) -> list[str]:
-        # Cycle 5 does not reshape perception yet. Later cycles can add habituation,
-        # cue-triggered prospective memory, and spontaneous recurrence behind this API.
         value = text.strip()
         return [value] if value else []
 
