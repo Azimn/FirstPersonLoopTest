@@ -1,4 +1,4 @@
-name: GPT-5.6 four-cycle hardening
+name: GPT-5.6 lifelike hardening
 
 on:
   push:
@@ -6,10 +6,42 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  apply-patches:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: subjective_character_loop_v0_4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gpt56-four-cycle-hardening-20260913
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply pending lifelike integration patches
+        run: |
+          for script in apply_cycle*.py; do
+            [ -f "$script" ] || continue
+            echo "Applying $script"
+            python "$script"
+          done
+      - name: Commit generated production changes
+        working-directory: .
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "gpt56-lifelike-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add subjective_character_loop_v0_4/loopcore.py
+          git commit -m "Apply lifelike integration patches"
+          git push origin HEAD:gpt56-four-cycle-hardening-20260913
+
   test:
+    needs: apply-patches
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -20,13 +52,15 @@ jobs:
         working-directory: subjective_character_loop_v0_4
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: gpt56-four-cycle-hardening-20260913
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Run full suite
         run: python -m unittest -v
       - name: Compile production modules
-        run: python -m py_compile loopcore.py guardrails.py experience.py backends.py personas.py subjective_loop.py
+        run: python -m py_compile loopcore.py guardrails.py lifelike.py experience.py backends.py personas.py subjective_loop.py
       - name: Run scripted smoke session
         run: |
           rm -f smoke.sqlite3
