@@ -7,44 +7,15 @@ from typing import Iterable, Optional
 
 _WORD = re.compile(r"[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?")
 _UNFINISHED_MARKERS = (
-    "?",
-    "still ",
-    "still don't",
-    "still do not",
-    "don't know",
-    "do not know",
-    "not sure",
-    "need to",
-    "have to",
-    "should ",
-    "want to",
-    "can't ",
-    "cannot ",
-    "bothers me",
-    "keeps bothering me",
-    "keep coming back",
-    "not ready",
-    "figure out",
-    "work out",
-    "wonder ",
-    "whether ",
-    "why ",
-    "how ",
-    "maybe ",
-    "perhaps ",
-    "later",
+    "?", "still ", "still don't", "still do not", "don't know", "do not know",
+    "not sure", "need to", "have to", "should ", "want to", "can't ", "cannot ",
+    "bothers me", "keeps bothering me", "keep coming back", "not ready", "figure out",
+    "work out", "wonder ", "whether ", "why ", "how ", "maybe ", "perhaps ", "later",
 )
 _CLOSURE_MARKERS = (
-    "that settles it",
-    "i have decided",
-    "i've decided",
-    "i understand now",
-    "i know what to do now",
-    "i can let this go",
-    "i can leave this behind",
-    "it doesn't matter anymore",
-    "it does not matter anymore",
-    "i was wrong about that",
+    "that settles it", "i have decided", "i've decided", "i understand now",
+    "i know what to do now", "i can let this go", "i can leave this behind",
+    "it doesn't matter anymore", "it does not matter anymore", "i was wrong about that",
     "i was mistaken about that",
 )
 _STOPWORDS = {
@@ -73,6 +44,10 @@ def _similarity(a: str, b: str) -> float:
     return max(jaccard, overlap * 0.72)
 
 
+def _normalized(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
 @dataclass
 class LingeringConcern:
     text: str
@@ -91,11 +66,34 @@ class LingeringConcern:
         return cls(text=text, alive=bool(data.get("alive", True)))
 
 
+@dataclass
+class FamiliarExperience:
+    text: str
+    repetitions: int = 1
+
+    def to_json(self) -> dict[str, object]:
+        return {"text": self.text, "repetitions": max(1, int(self.repetitions))}
+
+    @classmethod
+    def from_json(cls, data: object) -> Optional["FamiliarExperience"]:
+        if not isinstance(data, dict):
+            return None
+        text = str(data.get("text", "")).strip()
+        if not text:
+            return None
+        return cls(text=text, repetitions=max(1, int(data.get("repetitions", 1))))
+
+
 class FirstPersonLife:
     """Persistent first-person carryover expressed as language, not telemetry."""
 
-    def __init__(self, concerns: Optional[Iterable[LingeringConcern]] = None) -> None:
+    def __init__(
+        self,
+        concerns: Optional[Iterable[LingeringConcern]] = None,
+        familiar: Optional[Iterable[FamiliarExperience]] = None,
+    ) -> None:
         self.concerns = list(concerns or [])
+        self.familiar = list(familiar or [])
 
     @classmethod
     def from_json(cls, data: object) -> "FirstPersonLife":
@@ -106,10 +104,18 @@ class FirstPersonLife:
             concern = LingeringConcern.from_json(raw)
             if concern is not None:
                 concerns.append(concern)
-        return cls(concerns)
+        familiar = []
+        for raw in data.get("familiar", []):
+            item = FamiliarExperience.from_json(raw)
+            if item is not None:
+                familiar.append(item)
+        return cls(concerns, familiar)
 
     def to_json(self) -> dict[str, object]:
-        return {"concerns": [concern.to_json() for concern in self.concerns]}
+        return {
+            "concerns": [concern.to_json() for concern in self.concerns],
+            "familiar": [item.to_json() for item in self.familiar],
+        }
 
     @staticmethod
     def _looks_unfinished(text: str) -> bool:
@@ -149,9 +155,33 @@ class FirstPersonLife:
             return
         self.concerns.append(LingeringConcern(value))
 
+    def _familiar_item(self, text: str) -> Optional[FamiliarExperience]:
+        key = _normalized(text)
+        for item in self.familiar:
+            if _normalized(item.text) == key:
+                return item
+        return None
+
     def process_experience(self, text: str, provenance: str) -> list[str]:
         value = text.strip()
-        return [value] if value else []
+        if not value:
+            return []
+        # Habituation belongs only to recurring internal/body sensation. Speech and
+        # ordinary events stay fresh because repetition by another person can itself
+        # be meaningful and should never silently disappear.
+        if provenance != "body":
+            return [value]
+        item = self._familiar_item(value)
+        if item is None:
+            self.familiar.append(FamiliarExperience(value, 1))
+            return [value]
+        item.repetitions += 1
+        if item.repetitions <= 2:
+            return [value]
+        return []
+
+    def familiar_experiences(self) -> list[str]:
+        return [item.text for item in self.familiar if item.repetitions >= 2]
 
     def observe_memory(self, text: str) -> None:
         return None
