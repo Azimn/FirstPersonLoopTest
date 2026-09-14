@@ -11,6 +11,11 @@ from typing import Callable, Optional
 
 from backends import ModelBackend
 from experience import ExperienceCompiler, HiddenState
+from guardrails import (
+    private_copy_match,
+    private_narration_reject_reason,
+    provenance_reject_reason,
+)
 from guardrails import private_narration_reject_reason, provenance_reject_reason
 
 
@@ -785,24 +790,13 @@ class CharacterLoop:
                 if not normalized_thought or normalized_thought in seen:
                     continue
                 seen.add(normalized_thought)
-                if normalized_spoken == normalized_thought:
+                matched, detail = private_copy_match(value, normalized_thought)
+                if matched:
                     self.journal.developer(
                         "speech_rejected_private_copy",
-                        "ratio=1.000; source=recent_private",
+                        f"{detail}; source=recent_private",
                     )
                     return ""
-                if len(normalized_thought) >= 40:
-                    ratio = difflib.SequenceMatcher(
-                        None,
-                        normalized_spoken,
-                        normalized_thought,
-                    ).ratio()
-                    if ratio >= 0.88:
-                        self.journal.developer(
-                            "speech_rejected_private_copy",
-                            f"ratio={ratio:.3f}; source=recent_private",
-                        )
-                        return ""
         return value
 
     def _action_reject_reason(self, action: str) -> Optional[str]:
