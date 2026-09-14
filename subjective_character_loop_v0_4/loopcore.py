@@ -12,6 +12,13 @@ from typing import Callable, Optional
 from backends import ModelBackend
 from experience import ExperienceCompiler, HiddenState
 from guardrails import (
+    action_shape_reject_reason,
+    private_copy_match,
+    private_narration_reject_reason,
+    provenance_reject_reason,
+    speech_shape_reject_reason,
+)
+from guardrails import (
     private_copy_match,
     private_narration_reject_reason,
     provenance_reject_reason,
@@ -773,8 +780,12 @@ class CharacterLoop:
             )
             return ""
 
-        if self._speech_narration.match(value):
-            self.journal.developer("speech_rejected_shape", f"text={value}")
+        shape_reason = speech_shape_reject_reason(value)
+        if shape_reason:
+            self.journal.developer(
+                "speech_rejected_shape",
+                f"reason={shape_reason}; text={value}",
+            )
             return ""
 
         if not involuntary:
@@ -810,8 +821,9 @@ class CharacterLoop:
             return "empty"
         if not re.match(r"^I\s+\S+", value):
             return "not_first_person_action"
-        if self._mental_action.match(value):
-            return "nonphysical_mental_content"
+        shape_reason = action_shape_reject_reason(value)
+        if shape_reason:
+            return shape_reason
         return self.ingress.reject_reason("action", value)
 
     @staticmethod
