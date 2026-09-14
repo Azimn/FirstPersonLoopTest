@@ -11,6 +11,7 @@ from typing import Callable, Optional
 
 from backends import ModelBackend
 from experience import ExperienceCompiler, HiddenState
+from guardrails import private_narration_reject_reason, provenance_reject_reason
 
 
 _QUOTED_SPEECH_RULE = """
@@ -164,12 +165,9 @@ class SubjectiveIngressGate:
             return "raw_telemetry"
 
         if provenance == "private":
-            if value.startswith(("[", "(", "*")):
-                return "outside_narration"
-            if low.startswith(("a moment of ", "pretorius ", "dr. pretorius ", "kiki ")):
-                return "outside_narration"
-            if any(term in low for term in self._outside_narration):
-                return "outside_narration"
+            reason = private_narration_reject_reason(value)
+            if reason:
+                return reason
         return None
 
 
@@ -218,6 +216,13 @@ class Journal:
         if kind not in self._awareness_kinds:
             raise ValueError(f"Not an awareness-bearing journal kind: {kind}")
         value = text.strip()
+        reason = provenance_reject_reason(kind, provenance)
+        if reason:
+            self.developer(
+                "ingress_rejected",
+                f"provenance={provenance}; reason={reason}; text={value}",
+            )
+            return False
         reason = self.ingress.reject_reason(provenance, value)
         if reason:
             self.developer(
