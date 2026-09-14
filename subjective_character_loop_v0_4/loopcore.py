@@ -603,6 +603,10 @@ class CharacterLoop:
         self._inject_threshold_changes()
         for text in self.compiler.recurrent_injections(self.state):
             self._append_experience(text, provenance="body")
+        # Time offers the natural-language continuity substrate an opportunity for a
+        # carried concern to return on its own. It does not force explicit thought;
+        # THINK/REST still belongs to the character-facing cognition loop.
+        self.life.advance(seconds, self.rng)
         self._save_runtime()
         if think:
             self.cognitive_cycle(trigger="time")
